@@ -2,6 +2,8 @@
 
 `siteOptiSample` is an R package developed for the GEO-TREES initiative. It provides tools to design optimized tree-inventory plot sampling strategies for forest biomass reference sites. By analysing raster datasets such as structural metrics from airborne LiDAR data, this package helps select plot locations that best represent the heterogeneity of a given site.
 
+See the [vignette](doc/siteOptiSample.html) for examples of how to use the package.
+
 ## Overview
 
 Designing a sampling strategy for ground-truth data collection is critical for accurate biomass estimation. Random sampling often leads to poor representation of the variation of forest structure present in the site.
