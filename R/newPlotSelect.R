@@ -133,7 +133,7 @@ newPlotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
   } else {
 
     if (pca) { 
-      old_pca <- PCALandscape(r, old_ext, center = TRUE, scale. = TRUE)
+      old_pca <- PCALandscape(r, center = TRUE, scale. = TRUE)
       r_pca <- old_pca$r_pca$x[, 1:n_pca, drop = FALSE]
     } else {
       r_pca <- scale(r)

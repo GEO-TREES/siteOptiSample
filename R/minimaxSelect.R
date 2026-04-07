@@ -19,8 +19,8 @@
 #' The minimax algorithm aims to minimise the maximum distance between
 #'     proposed plots and existing plots, iteratively placing new plots in
 #'     pixels with structural attributes most dissimilar to existing plots. For
-#'     each candidate pixel, compute the distance to the nearest existing plot,
-#'     then choose the pixel with the highest distance value. As a result, plots
+#'     each candidate pixel, it computes the distance to the nearest existing plot,
+#'     then chooses the pixel with the highest distance value. As a result, plots
 #'     occupy structural extremes.
 #'
 #' @return If `r_pca` is a `SpatRaster`, returns a list of `sf` polygons for the 
