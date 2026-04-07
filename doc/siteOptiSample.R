@@ -236,6 +236,7 @@ test1 <- newPlotSelect(
   pca = TRUE, 
   n_pca = 3,
   method = meanminSelect)
+
 test1$type <- "With existing plots"
 
 # Test without existing plots
@@ -248,9 +249,10 @@ test2 <- newPlotSelect(
   pca = TRUE, 
   n_pca = 3,
   method = meanminSelect)
+
 test2$type <- "Without existing plots"
 
-# Test without PCA 
+# Test without plots PCA 
 test3 <- newPlotSelect(
   r = r,
   p = NULL,
@@ -262,7 +264,7 @@ test3 <- newPlotSelect(
   method = meanminSelect)
 test3$type <- "Using raw raster values"
 
-# Test with PCA using all columns
+# Test using all columns
 test4 <- newPlotSelect(
   r = r,
   p = NULL,
@@ -286,7 +288,7 @@ r_bg <- r[[1]]
 r_bg[!is.na(values(r_bg))] <- 1
 r_bg <- as.factor(r_bg)
 
-# Output should be identical
+# Compare outpus
 wrap_plots(lapply(test_1_2_3_4, function(x) {
   ggplot() + 
     geom_spatraster(data = r_bg, show.legend = FALSE) +
@@ -409,4 +411,109 @@ data.frame(
     labs(
       x = "Distance",
       y = "Number of pixels")
+
+## -----------------------------------------------------------------------------
+# Extract structural metrics as a non-spatial matrix
+r_df <- values(r)
+valid_rows <- complete.cases(r_df)
+r_df <- r_df[valid_rows,]
+r_coord <- crds(r)
+
+# Extract existing plots as row indices in r_df
+p_vect <- vect(p)
+p_vect <- project(p_vect, crs(r))
+r_cov <- cells(r, p_vect)[,"cell"]
+p_ind <- match(r_cov, which(valid_rows))
+p_ind <- p_ind[!is.na(p_ind)]
+
+## -----------------------------------------------------------------------------
+all(PCALandscape(r_df, old_ext, center = TRUE, scale. = TRUE)$r_pca$x == old_pca$r_pca$x)
+
+## -----------------------------------------------------------------------------
+test_df1 <- newPlotSelect(
+  r = r_df,
+  p = p_ind,
+  n_plots = 10,
+  p_new_dim = NULL,
+  r_mask = NULL,
+  pca = TRUE,
+  n_pca = 3,
+  method = meanminSelect
+)
+test_df1_coord <- as.data.frame(r_coord[test_df1,])
+
+test_r1 <- newPlotSelect(
+  r = r,
+  p = p,
+  n_plots = 10,
+  p_new_dim = res(r),
+  r_mask = NULL,
+  pca = TRUE,
+  n_pca = 3,
+  method = meanminSelect
+)
+
+test_df2 <- newPlotSelect(
+  r = r_df,
+  p = p_ind,
+  n_plots = 10,
+  p_new_dim = NULL,
+  r_mask = NULL,
+  pca = TRUE,
+  n_pca = 3,
+  method = minimaxSelect
+)
+test_df2_coord <- as.data.frame(r_coord[test_df2,])
+
+test_r2 <- newPlotSelect(
+  r = r,
+  p = p,
+  n_plots = 10,
+  p_new_dim = res(r),
+  r_mask = NULL,
+  pca = TRUE,
+  n_pca = 3,
+  method = minimaxSelect
+)
+
+p_df_r1 <- ggplot() +
+  geom_spatraster(data = r[[1]]) + 
+  scale_fill_scico(name = "Canopy height (zmax)", palette = "bamako", 
+    na.value = NA) +
+  geom_sf(data = p, fill = NA, colour = "red") + 
+  geom_sf(data = test_r1, fill = NA, colour = "blue", linewidth = 1) + 
+  geom_point(data = test_df1_coord, aes(x = x, y = y ), shape = 21, colour = "black", fill = "cyan", size = 3) +
+  theme_bw() +
+  ggtitle("meanminSelect") + 
+  labs(
+    x = NULL, 
+    y = NULL) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12))
+  
+p_df_r2 <- ggplot() +
+  geom_spatraster(data = r[[1]]) + 
+  scale_fill_scico(name = "Canopy height (zmax)", palette = "bamako", 
+    na.value = NA) +
+  geom_sf(data = p, fill = NA, colour = "red") + 
+  geom_sf(data = test_r2, fill = NA, colour = "blue", linewidth = 1) + 
+  geom_point(data = test_df2_coord, aes(x = x, y = y ), shape = 21, colour = "black", fill = "cyan", size = 3) +
+  theme_bw() +
+  ggtitle("minimaxSelect") + 
+  labs(
+    x = NULL, 
+    y = NULL) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12))
+
+wrap_plots(p_df_r1, p_df_r2) + 
+  plot_layout(
+    nrow = 1,
+    guides = "collect")
 

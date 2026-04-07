@@ -6,7 +6,7 @@
 \usage{
 newPlotSelect(
   r,
-  p,
+  p = NULL,
   n_plots,
   p_new_dim = NULL,
   r_mask = NULL,
@@ -16,21 +16,23 @@ newPlotSelect(
 )
 }
 \arguments{
-\item{r}{SpatRaster with structural metrics}
+\item{r}{\code{SpatRaster} or dataframe with structural metrics}
 
-\item{p}{optional, either an sf object containing plot polygons or points, or
-a dataframe with two columns \code{x} and \code{y} describing coordinates in the
-same coordinate system as \code{r}}
+\item{p}{optional, either an \code{sf} object containing polygons or points of
+existing plots, a dataframe with two columns \code{x} and \code{y} describing
+coordinates in the same coordinate system as \code{r}, or if \code{r} is not
+spatial a vector of row indices in \code{r} specifying locations with
+existing plots.}
 
 \item{n_plots}{maximum number of new plots to add}
 
 \item{p_new_dim}{optional, dimensions of new plots in the same coordinate
 system as \code{r}. Either a single value for square plots, or a vector of two
 values for rectangular plots. Should be perfectly divisible by the
-resolution of \code{r}}
+resolution of \code{r}. Ignored if \code{r} is not spatial}
 
 \item{r_mask}{optional, a raster which defines a mask of potential plot
-locations, e.g. based on accessibility.}
+locations, e.g. based on accessibility.  Ignored if \code{r} is not spatial}
 
 \item{pca}{logical, if TRUE (default) the variables in \code{r} are run through a
 PCA to reduce issues of collinearity among variables. If TRUE, provide

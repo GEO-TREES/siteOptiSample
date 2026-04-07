@@ -7,25 +7,30 @@
 minimaxSelect(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim)
 }
 \arguments{
-\item{r_pca}{raster of PCA scores of pixels in structural space}
+\item{r_pca}{\code{SpatRaster}, \code{data.frame}, or \code{matrix} of PCA scores or raw
+structural metrics. If spatial, values represent pixels across a landscape.
+If non-spatial, each row represents a candidate plot}
 
-\item{p_pca}{PCA values of existing plots in structural space}
+\item{p_pca}{optional, PCA values or raw structural metrics of existing
+plots in structural space}
 
-\item{old_ind}{optional, pixel IDs in \code{r_pca} specifying existing plot
-locations.}
+\item{old_ind}{optional, pixel IDs (if spatial) or row indices (if non-spatial)
+in \code{r_pca} specifying existing plot locations.}
 
-\item{new_ind}{optional, pixel IDs in \code{r_pca} specifying candidate plot
-locations. If not supplied, the full set of landscape pixels in \code{r_pca}
-is used.}
+\item{new_ind}{optiona, pixel IDs (if spatial) or row indices (if non-spatial)
+in \code{r_pca} specifying candidate plot locations. If not supplied, the full
+set of valid landscape pixels or dataframe rows in \code{r_pca} is used.}
 
-\item{n_plots}{maximum number of new plots to add}
+\item{n_plots}{maximum number of new plots to add.}
 
-\item{p_new_dim}{dimensions of new plots in the same coordinate system as
-\code{r}. A vector of two values. Should be perfectly divisible by the
-resolution of \code{r}.}
+\item{p_new_dim}{dimensions of new plots in the same coordinate system as \code{r}.
+A vector of two values. Should be perfectly divisible by the resolution
+of \code{r_pca}. \strong{Note:} Ignored if \code{r_pca} is a \code{data.frame} or \code{matrix}.}
 }
 \value{
-vector of pixel index values for proposed new plots
+If \code{r_pca} is a \code{SpatRaster}, returns a list of \code{sf} polygons for the
+proposed new plots. If \code{r_pca} is a \code{data.frame} or \code{matrix}, returns a
+numeric vector of row indices corresponding to the selected plots.
 }
 \description{
 Iteratively add candidate plots using the minimax algorithm
