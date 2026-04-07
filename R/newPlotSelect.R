@@ -1,16 +1,18 @@
 #' Recommend locations for additional plots
 #' 
-#' @param r SpatRaster with structural metrics
-#' @param p optional, either an sf object containing plot polygons or points, or
-#'     a dataframe with two columns `x` and `y` describing coordinates in the
-#'     same coordinate system as `r`
+#' @param r `SpatRaster` or dataframe with structural metrics
+#' @param p optional, either an `sf` object containing polygons or points of 
+#'     existing plots, a dataframe with two columns `x` and `y` describing 
+#'     coordinates in the same coordinate system as `r`, or if `r` is not 
+#'     spatial a vector of row indices in `r` specifying locations with 
+#'     existing plots.
 #' @param n_plots maximum number of new plots to add
 #' @param p_new_dim optional, dimensions of new plots in the same coordinate 
 #'     system as `r`. Either a single value for square plots, or a vector of two
 #'     values for rectangular plots. Should be perfectly divisible by the
-#'     resolution of `r`
+#'     resolution of `r`. Ignored if `r` is not spatial
 #' @param r_mask optional, a raster which defines a mask of potential plot
-#'     locations, e.g. based on accessibility. 
+#'     locations, e.g. based on accessibility.  Ignored if `r` is not spatial
 #' @param pca logical, if TRUE (default) the variables in `r` are run through a
 #'     PCA to reduce issues of collinearity among variables. If TRUE, provide
 #'     `n_pca`
@@ -32,14 +34,14 @@ newPlotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
 
   # Check type of r and check inputs
   if (!inherits(r, "SpatRaster")) {
-    if (!inherits(r, "data.frame")) { 
-      stop("if `r` is not a 'SpatRaster' it must be a 'data.frame'")
+    if (!inherits(r, c("data.frame", "matrix"))) { 
+      stop("if `r` is not a 'SpatRaster' it must be a 'data.frame' or 'matrix'")
     }
 
     if (!is.null(p)) { 
       if (!is.numeric(p) || !is.vector(p) || any(is.na(p)) || 
         any(p > nrow(r)) || any(p < 1) || !all(p == floor(p))) {
-      message("if `r` is not a 'SpatRaster', `p` must be a vector of row indices in `r`.")
+        stop("if `r` is not a 'SpatRaster', `p` must be a vector of row indices in `r`.")
       }
     }
 
@@ -52,6 +54,12 @@ newPlotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
       message("if `r` is not a 'SpatRaster', `r_mask` is ignored.")
       r_mask <- NULL
     }
+  }
+  
+  # Assign number of PCA axes
+  if (pca && is.null(n_pca)) {
+    message("`n_pca` not provided, including all PCA axes")
+    n_pca <- ncol(r)
   }
 
   # If r is a raster
@@ -92,12 +100,8 @@ newPlotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     } else {
       old_ext <- NULL
     }
-  
-    # Optional PCA to reduce dimensionality
-    if (pca && is.null(n_pca)) {
-     n_pca <- ncol(r)
-    }
 
+    # Optional PCA to reduce dimensionality
     if (pca) { 
       old_pca <- PCALandscape(r, old_ext, center = TRUE, scale. = TRUE)
       r_pca <- rep(r[[1]], n_pca)
@@ -127,9 +131,18 @@ newPlotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     # Initialise PCA values for candidate plots 
     new_ind <- which(complete.cases(terra::values(r_mask)))
   } else {
-    # TODO
-  }
 
+    if (pca) { 
+      old_pca <- PCALandscape(r, old_ext, center = TRUE, scale. = TRUE)
+      r_pca <- old_pca$r_pca$x[, 1:n_pca, drop = FALSE]
+    } else {
+      r_pca <- scale(r)
+    }
+
+    p_pca <- NULL
+    old_ind <- p
+    new_ind <- seq_len(nrow(r))
+  }
 
   # Implement plot selection algorithm
   p_list <- method(
@@ -141,7 +154,11 @@ newPlotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     p_new_dim = p_new_dim)
 
   # Prepare output sf object
-  out <- sf::st_sf(geometry = do.call(c, p_list), crs = terra::crs(r))
+  if (inherits(r, "SpatRaster")) {
+    out <- sf::st_sf(geometry = do.call(c, p_list), crs = terra::crs(r))
+  } else {
+    out <- unlist(p_list)
+  }
 
   # Return
   return(out)

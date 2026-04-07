@@ -8,7 +8,7 @@ that space}
 PCALandscape(r, p = NULL, ...)
 }
 \arguments{
-\item{r}{SpatRaster with structural metrics}
+\item{r}{either a SpatRaster or dataframe with structural metrics}
 
 \item{p}{optional dataframe containing structural metrics for each plot, e.g.
 as returned by \code{extractPlotMetrics()}}

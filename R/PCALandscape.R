@@ -1,7 +1,7 @@
 #' Run a PCA on landscape structural metrics, and optionally place plots in
 #' that space
 #' 
-#' @param r SpatRaster with structural metrics
+#' @param r either a SpatRaster or dataframe with structural metrics
 #' @param p optional dataframe containing structural metrics for each plot, e.g.
 #'     as returned by `extractPlotMetrics()`
 #' @param ... additional arguments passed to `prcomp()`  
@@ -11,15 +11,14 @@
 #' 
 #' @export
 #' 
-
 PCALandscape <- function(r, p = NULL, ...) {
-  # Check type of r
-  if (!inherits(r, "SpatRaster")) {
-    stop("r must be of class SpatRaster")
-  }
 
   # Convert raster to data frame for landscape
-  r_df <- as.data.frame(r, xy = FALSE, na.rm = TRUE)
+  if (inherits(r, "SpatRaster")) {
+    r_df <- as.data.frame(r, xy = FALSE, na.rm = TRUE)
+  } else {
+    r_df <- as.data.frame(r)
+  }
   
   # Select only metric columns 
   metric_cols <- names(r_df)
