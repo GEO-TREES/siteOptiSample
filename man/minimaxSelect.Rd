@@ -4,33 +4,34 @@
 \alias{minimaxSelect}
 \title{Iteratively add candidate plots using the minimax algorithm}
 \usage{
-minimaxSelect(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim)
+minimaxSelect(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim, het_q)
 }
 \arguments{
-\item{r_pca}{\code{SpatRaster}, \code{data.frame}, or \code{matrix} of PCA scores or raw
-structural metrics. If spatial, values represent pixels across a landscape.
-If non-spatial, each row represents a candidate plot}
+\item{r_pca}{\code{SpatRaster} of PCA scores or raw structural metrics.}
 
 \item{p_pca}{optional, PCA values or raw structural metrics of existing
 plots in structural space}
 
-\item{old_ind}{optional, pixel IDs (if spatial) or row indices (if non-spatial)
-in \code{r_pca} specifying existing plot locations.}
+\item{old_ind}{optional, pixel IDs in \code{r_pca} specifying existing plot locations.}
 
-\item{new_ind}{optiona, pixel IDs (if spatial) or row indices (if non-spatial)
-in \code{r_pca} specifying candidate plot locations. If not supplied, the full
-set of valid landscape pixels or dataframe rows in \code{r_pca} is used.}
+\item{new_ind}{optional, pixel IDs in \code{r_pca} specifying candidate plot locations.
+If not supplied, the full set of valid pixels in \code{r_pca} is used.}
 
 \item{n_plots}{maximum number of new plots to add.}
 
 \item{p_new_dim}{dimensions of new plots in the same coordinate system as \code{r}.
 A vector of two values. Should be perfectly divisible by the resolution
-of \code{r_pca}. \strong{Note:} Ignored if \code{r_pca} is a \code{data.frame} or \code{matrix}.}
+of \code{r_pca}.}
+
+\item{het_q}{optional, numeric value between 0 and 1. Defines a threshold
+to filter out internally heterogeneous candidate locations, preventing plots
+being placed on sharp structural transitions. Represents maximum
+quantile for total focal standard deviation of metrics within
+candidate footprint (e.g., 0.8 excludes top 20\% most heterogeneous
+areas).}
 }
 \value{
-If \code{r_pca} is a \code{SpatRaster}, returns a list of \code{sf} polygons for the
-proposed new plots. If \code{r_pca} is a \code{data.frame} or \code{matrix}, returns a
-numeric vector of row indices corresponding to the selected plots.
+list of \code{sf} polygons for proposed new plots.
 }
 \description{
 Iteratively add candidate plots using the minimax algorithm
@@ -39,7 +40,7 @@ Iteratively add candidate plots using the minimax algorithm
 The minimax algorithm aims to minimise the maximum distance between
 proposed plots and existing plots, iteratively placing new plots in
 pixels with structural attributes most dissimilar to existing plots. For
-each candidate pixel, compute the distance to the nearest existing plot,
-then choose the pixel with the highest distance value. As a result, plots
+each candidate pixel, it computes the distance to the nearest existing plot,
+then chooses the pixel with the highest distance value. As a result, plots
 occupy structural extremes.
 }

@@ -227,20 +227,22 @@ ggplot(old_pca_classif_df, aes(PC1, PC2, colour = group)) +
 
 ## -----------------------------------------------------------------------------
 # Test with existing plots
-test1 <- newPlotSelect(
+test1 <- plotSelect(
   r = r,
   p = p,
   n_plots = 10,
   p_new_dim = c(100, 100),
   r_mask = NULL,
-  pca = TRUE, 
+  pca = TRUE,
   n_pca = 3,
-  method = meanminSelect)
+  coord = NULL,
+  method = meanminSelect
+)
 
 test1$type <- "With existing plots"
 
 # Test without existing plots
-test2 <- newPlotSelect(
+test2 <- plotSelect(
   r = r,
   p = NULL,
   n_plots = 10,
@@ -253,7 +255,7 @@ test2 <- newPlotSelect(
 test2$type <- "Without existing plots"
 
 # Test without plots PCA 
-test3 <- newPlotSelect(
+test3 <- plotSelect(
   r = r,
   p = NULL,
   n_plots = 10,
@@ -265,7 +267,7 @@ test3 <- newPlotSelect(
 test3$type <- "Using raw raster values"
 
 # Test using all columns
-test4 <- newPlotSelect(
+test4 <- plotSelect(
   r = r,
   p = NULL,
   n_plots = 10,
@@ -288,7 +290,7 @@ r_bg <- r[[1]]
 r_bg[!is.na(values(r_bg))] <- 1
 r_bg <- as.factor(r_bg)
 
-# Compare outpus
+# Compare outputs
 wrap_plots(lapply(test_1_2_3_4, function(x) {
   ggplot() + 
     geom_spatraster(data = r_bg, show.legend = FALSE) +
@@ -305,7 +307,7 @@ r_mask[values(r_mask) < 35] <- NA_real_
 r_mask[!is.na(values(r_mask))] <- 1
 r_mask <- as.factor(r_mask)
 
-test5 <- newPlotSelect(
+test5 <- plotSelect(
   r = r,
   p = NULL,
   n_plots = 10,
@@ -325,7 +327,7 @@ ggplot() +
 
 ## -----------------------------------------------------------------------------
 # Test with minimax algorithm
-test6 <- newPlotSelect(
+test6 <- plotSelect(
   r = r,
   p = p,
   n_plots = 10,
@@ -418,6 +420,7 @@ r_df <- values(r)
 valid_rows <- complete.cases(r_df)
 r_df <- r_df[valid_rows,]
 r_coord <- crds(r)
+r_df_all <- cbind(r_df, r_coord)
 
 # Extract existing plots as row indices in r_df
 p_vect <- vect(p)
@@ -430,46 +433,48 @@ p_ind <- p_ind[!is.na(p_ind)]
 all(PCALandscape(r_df, old_ext, center = TRUE, scale. = TRUE)$r_pca$x == old_pca$r_pca$x)
 
 ## -----------------------------------------------------------------------------
-test_df1 <- newPlotSelect(
-  r = r_df,
+test_df1 <- plotSelect(
+  r = r_df_all,
   p = p_ind,
   n_plots = 10,
-  p_new_dim = NULL,
+  p_new_dim = c(100, 100),
   r_mask = NULL,
   pca = TRUE,
   n_pca = 3,
+  coord = c("x", "y"),
   method = meanminSelect
 )
 test_df1_coord <- as.data.frame(r_coord[test_df1,])
 
-test_r1 <- newPlotSelect(
+test_r1 <- plotSelect(
   r = r,
   p = p,
   n_plots = 10,
-  p_new_dim = res(r),
+  p_new_dim = c(100, 100),
   r_mask = NULL,
   pca = TRUE,
   n_pca = 3,
   method = meanminSelect
 )
 
-test_df2 <- newPlotSelect(
-  r = r_df,
+test_df2 <- plotSelect(
+  r = r_df_all,
   p = p_ind,
   n_plots = 10,
-  p_new_dim = NULL,
+  p_new_dim = c(100, 100),
   r_mask = NULL,
   pca = TRUE,
   n_pca = 3,
+  coord = c("x", "y"),
   method = minimaxSelect
 )
 test_df2_coord <- as.data.frame(r_coord[test_df2,])
 
-test_r2 <- newPlotSelect(
+test_r2 <- plotSelect(
   r = r,
   p = p,
   n_plots = 10,
-  p_new_dim = res(r),
+  p_new_dim = c(100, 100),
   r_mask = NULL,
   pca = TRUE,
   n_pca = 3,
@@ -516,4 +521,39 @@ wrap_plots(p_df_r1, p_df_r2) +
   plot_layout(
     nrow = 1,
     guides = "collect")
+
+## -----------------------------------------------------------------------------
+het_q_list <- lapply(seq(0.2, 1, 0.2), function(x) { 
+  out <- plotSelect(
+    r = r,
+    p = p,
+    n_plots = 10,
+    p_new_dim = c(100, 100),
+    r_mask = NULL,
+    pca = TRUE,
+    n_pca = 3,
+    het_q = x,
+    method = minimaxSelect
+  )
+  out$het_q <- x
+  out
+})
+
+het_q_poly <- bind_rows(het_q_list)
+
+ggplot() +
+  geom_spatraster(data = r[[1]]) + 
+  scale_fill_scico(name = "Canopy height (zmax)", palette = "bamako", 
+    na.value = NA) +
+  geom_sf(data = p, fill = NA, colour = "red") + 
+  geom_sf(data = het_q_poly, aes(colour = het_q), fill = NA, linewidth = 1) + 
+  scale_colour_scico(name = "Heterogeneity threshold", palette = "roma") + 
+  theme_bw() +
+  labs(
+    x = NULL, 
+    y = NULL) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12))
 

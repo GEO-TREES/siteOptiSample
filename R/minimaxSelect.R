@@ -1,19 +1,21 @@
 #' Iteratively add candidate plots using the minimax algorithm
 #' 
-#' @param r_pca `SpatRaster`, `data.frame`, or `matrix` of PCA scores or raw 
-#'     structural metrics. If spatial, values represent pixels across a landscape. 
-#'     If non-spatial, each row represents a candidate plot 
+#' @param r_pca `SpatRaster` of PCA scores or raw structural metrics. 
 #' @param p_pca optional, PCA values or raw structural metrics of existing 
 #'     plots in structural space
-#' @param old_ind optional, pixel IDs (if spatial) or row indices (if non-spatial) 
-#'      in `r_pca` specifying existing plot locations. 
-#' @param new_ind optiona, pixel IDs (if spatial) or row indices (if non-spatial) 
-#'      in `r_pca` specifying candidate plot locations. If not supplied, the full 
-#'      set of valid landscape pixels or dataframe rows in `r_pca` is used.
+#' @param old_ind optional, pixel IDs in `r_pca` specifying existing plot locations. 
+#' @param new_ind optional, pixel IDs in `r_pca` specifying candidate plot locations. 
+#'     If not supplied, the full set of valid pixels in `r_pca` is used.
 #' @param n_plots maximum number of new plots to add.
 #' @param p_new_dim dimensions of new plots in the same coordinate system as `r`. 
 #'      A vector of two values. Should be perfectly divisible by the resolution 
-#'      of `r_pca`. **Note:** Ignored if `r_pca` is a `data.frame` or `matrix`.
+#'      of `r_pca`. 
+#' @param het_q optional, numeric value between 0 and 1. Defines a threshold 
+#'     to filter out internally heterogeneous candidate locations, preventing plots 
+#'     being placed on sharp structural transitions. Represents maximum 
+#'     quantile for total focal standard deviation of metrics within 
+#'     candidate footprint (e.g., 0.8 excludes top 20% most heterogeneous 
+#'     areas). 
 #'
 #' @details 
 #' The minimax algorithm aims to minimise the maximum distance between
@@ -23,9 +25,7 @@
 #'     then chooses the pixel with the highest distance value. As a result, plots
 #'     occupy structural extremes.
 #'
-#' @return If `r_pca` is a `SpatRaster`, returns a list of `sf` polygons for the 
-#'      proposed new plots. If `r_pca` is a `data.frame` or `matrix`, returns a 
-#'      numeric vector of row indices corresponding to the selected plots.
+#' @return list of `sf` polygons for proposed new plots. 
 #' 
 #' @importFrom proxy dist
 #' @import terra
@@ -33,179 +33,152 @@
 #' 
 #' @export
 #' 
-minimaxSelect <- function(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim) { 
+minimaxSelect <- function(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim, het_q) { 
 
-  # Initialise empty list to store new plot polygons
   p_list <- list()
 
-  if (!inherits(r_pca, "SpatRaster")) {
-    r_mat <- as.matrix(r_pca)
-    
-    if (!is.null(p_pca)) {
-      p_mat_ext <- as.matrix(p_pca)
+  # Extract data 
+  v_pca <- terra::values(r_pca)
+  valid_idx <- which(complete.cases(v_pca))
+  v_pca_valid <- v_pca[valid_idx, , drop = FALSE]
+
+  # Create template raster for focal operations
+  r_cand <- r_pca[[1]] 
+  terra::values(r_cand) <- NA_real_
+
+  # Build focal window 
+  res_x <- terra::res(r_pca)[1]
+  res_y <- terra::res(r_pca)[2]
+
+  p_x <- round(p_new_dim[1] / res_x)
+  p_y <- round(p_new_dim[2] / res_y)
+
+  n_x <- ceiling(p_x / 2)
+  n_y <- ceiling(p_y / 2)
+  full_cols <- (2 * n_x) + 1 
+  full_rows <- (2 * n_y) + 1
+
+  pad_left_x  <- floor((full_cols - p_x) / 2)
+  pad_right_x <- ceiling((full_cols - p_x) / 2)
+  pad_left_y  <- floor((full_rows - p_y) / 2)
+  pad_right_y <- ceiling((full_rows - p_y) / 2)
+
+  w_matrix <- matrix(NA, nrow = full_rows, ncol = full_cols)
+  w_matrix[(pad_left_y + 1):(full_rows - pad_right_y), 
+           (pad_left_x + 1):(full_cols - pad_right_x)] <- 1
+
+  # Pre-compute cell offsets for the selected window
+  pos <- which(w_matrix == 1, arr.ind = TRUE)
+  row_offsets <- pos[,1] - ceiling(nrow(w_matrix) / 2)
+  col_offsets <- pos[,2] - ceiling(ncol(w_matrix) / 2)
+
+  # Calculate exactly how many pixels constitute a complete, valid plot
+  target_sum <- sum(w_matrix == 1, na.rm = TRUE)
+
+  # Save mask boundaries outside the loop
+  base_candidates <- new_ind
+
+  # Heterogeneity filter 
+  if (!is.null(het_q)) {
+    if (target_sum == 1) {
+      message("Plot size is a single pixel. Internal heterogeneity is 0. Skipping heterogeneity filter...")
+      het_safe_centers <- seq_len(terra::ncell(r_pca))
     } else {
-      p_mat_ext <- NULL
-    } 
-
-    # Selection Loop
-    for (i in seq_len(n_plots)) { 
-      message(i, "/", n_plots)
+      # Calculate focal standard deviation for each PCA layer
+      r_sd <- terra::focal(r_pca, w = w_matrix, fun = "sd", na.rm = TRUE)
       
-      # Exclude already selected plots from candidates
-      new_ind <- setdiff(new_ind, old_ind)
+      # Sum standard deviations across all PCA layers to get a Total Heterogeneity Index
+      r_het <- sum(r_sd, na.rm = TRUE)
       
-      if (length(new_ind) == 0) { 
-        message("No possible locations for plot ", i, "/", n_plots, ". Stopping ...")
-        break
-      }
+      # Find the threshold value based ONLY on pixels inside the user's mask
+      het_vals <- terra::values(r_het)[base_candidates]
+      het_cutoff <- quantile(het_vals, probs = het_q, na.rm = TRUE)
       
-      # Compile the current set of all "existing" plots
-      current_p_mat <- p_mat_ext
-      if (length(old_ind) > 0) {
-        current_p_mat <- rbind(current_p_mat, r_mat[old_ind, , drop = FALSE])
-      }
-      
-      if (is.null(current_p_mat) || nrow(current_p_mat) == 0) {
-        # If there are absolutely no existing plots, pick the first available candidate
-        sel_id <- new_ind[1]
-      } else {
-        # Calculate minimum distance from all remaining candidates to existing plots
-        cand_mat <- r_mat[new_ind, , drop = FALSE]
-        min_dists <- apply(as.matrix(proxy::dist(cand_mat, current_p_mat)), 1, min)
-        
-        # Pick the candidate that has the MAXIMUM minimum distance
-        best_idx <- which.max(min_dists)
-        sel_id <- new_ind[best_idx]
-      }
-      
-      # Store result and update existing internal plots for the next iteration
-      p_list <- c(p_list, sel_id)
-      old_ind <- c(old_ind, sel_id)
+      # Identify all center pixels whose footprint falls below the variance threshold
+      het_safe_centers <- which(terra::values(r_het) <= het_cutoff)
     }
-    
-    return(p_list)
   } else {
-
-    # Safely store external existing plots for the spatial loop
-    p_mat_ext <- NULL
-    if (!is.null(p_pca)) {
-      p_mat_ext <- as.matrix(p_pca)
-    }
-
-    # For each plot 
-    for (i in seq_len(n_plots)) { 
-      message(i, "/", n_plots)
-      # Get index values in PCA for candidate plots
-      # Excluding pixels occupied by existing plots 
-      new_ind <- setdiff(new_ind, old_ind)
-
-      # Stop if no potential locations available
-      if (length(new_ind) == 0) { 
-        message("No possible locations for plot ", i, "/", n_plots, ". Stopping ...")
-        break
-      }
-
-      # Compile the current set of all "existing" plots
-      current_p_mat <- p_mat_ext
-      if (length(old_ind) > 0) {
-        current_p_mat <- rbind(current_p_mat, terra::values(r_pca)[old_ind, , drop = FALSE])
-      }
-
-      # Initialise minimum distances between each pixel and existing plots
-      r_cand <- r_pca[[1]]
-      if (!is.null(current_p_mat) && nrow(current_p_mat) > 0) {
-        terra::values(r_cand) <- apply(as.matrix(
-          proxy::dist(terra::values(r_pca), current_p_mat)), 1, min)
-      } else {
-        terra::values(r_cand)[complete.cases(terra::values(r_cand))] <- Inf
-      }
-
-      # Create a moving window to compute mean distance of other subplots
-      p_width_x <- p_new_dim[1]
-      p_height_y <- p_new_dim[2]
-      res_x <- terra::res(r_pca)[1]
-      res_y <- terra::res(r_pca)[2]
-
-      # Number of cells needed in half-window
-      n_x <- ceiling((p_width_x / res_x) / 2)
-      n_y <- ceiling((p_height_y / res_y) / 2)
-
-      # Full window dimensions
-      full_cols <- (2 * n_x) + 1 
-      full_rows <- (2 * n_y) + 1
-
-      # Size of the new plot in raster cells
-      p_x <- round(p_new_dim[1] / res_x)
-      p_y <- round(p_new_dim[2] / res_y)
-      P <- c(p_x, p_y)
-
-      # Compute symmetric padding (handles odd differences)
-      pad_left_x  <- floor((full_cols - P[1]) / 2)
-      pad_right_x <- ceiling((full_cols - P[1]) / 2)
-      pad_left_y  <- floor((full_rows - P[2]) / 2)
-      pad_right_y <- ceiling((full_rows - P[2]) / 2)
-
-      # Create centered window
-      w_matrix <- matrix(NA, nrow = full_rows, ncol = full_cols)
-
-      # Placement indices
-      start_row <- pad_left_y + 1
-      end_row   <- full_rows - pad_right_y
-      start_col <- pad_left_x + 1
-      end_col   <- full_cols - pad_right_x
-
-      # Insert centered block
-      w_matrix[start_row:end_row, start_col:end_col] <- 1
-
-      # Run focal operation
-      r_rs <- terra::focal(r_cand, w = w_matrix, fun = "mean")
-
-      # Find pixel with largest value (Minimax behavior)
-      max_val <- max(terra::values(r_rs, na.rm = TRUE))
-      which_max_val <- which(terra::values(r_rs) == max_val)
-
-      # Extract coordinates of selected plot
-      rc <- terra::rowColFromCell(r_rs, which_max_val)
-      row0 <- rc[1]
-      col0 <- rc[2]
-
-      # Dimensions of window
-      h <- nrow(w_matrix)
-      w <- ncol(w_matrix)
-      pos <- which(w_matrix == 1, arr.ind = TRUE)
-
-      # The cell in the window that corresponds to the focal raster cell:
-      # It is ALWAYS the middle cell of the full window matrix
-      row_center <- ceiling(h / 2)
-      col_center <- ceiling(w / 2)
-
-      # Compute row/col offsets FROM THE CENTER
-      row_offsets <- pos[,1] - row_center
-      col_offsets <- pos[,2] - col_center
-
-      # Apply offsets to the focal cell
-      sel_rows <- row0 + row_offsets
-      sel_cols <- col0 + col_offsets
-
-      # Convert to raster cell numbers
-      sel_id <- terra::cellFromRowCol(r_rs, sel_rows, sel_cols)
-      sel_id <- sel_id[!is.na(sel_id)]
-
-      # Extract polygon of selected plot
-      r_sub <- r_pca[[1]]
-      terra::values(r_sub) <- NA
-      r_sub[sel_id] <- 1
-      p_sub <- terra::as.polygons(r_sub, dissolve = TRUE)
-      p_sf <- sf::st_geometry(sf::st_as_sf(p_sub))
-
-      # Add polygon of selected plot to list
-      p_list[[i]] <- p_sf
-
-      # Update cell IDs of selected plots
-      old_ind <- c(old_ind, sel_id)
-    }
-
-    # Return
-    return(p_list)
+    het_safe_centers <- seq_len(terra::ncell(r_pca)) 
   }
+
+  # Selection loop
+  for (i in seq_len(n_plots)) { 
+    message(i, "/", n_plots)
+    
+    # Ensure entire footprint of new plots falls within unoccupied pixels
+    r_avail <- r_pca[[1]]
+    terra::values(r_avail) <- 0
+    avail_idx <- setdiff(base_candidates, old_ind)
+    terra::values(r_avail)[avail_idx] <- 1
+    
+    r_safe <- terra::focal(r_avail, w = w_matrix, fun = "sum", na.rm = TRUE)
+    safe_centers <- which(terra::values(r_safe) == target_sum)
+    
+    # Restrict candidate centers to those with safe footprints
+    current_candidates <- intersect(avail_idx, safe_centers)
+    current_candidates <- intersect(current_candidates, het_safe_centers)
+
+    if (length(current_candidates) == 0) {  
+      message("No possible locations for plot ", i, "/", n_plots, ". Stopping ...")
+      break
+    }
+
+    # Compile the current set of all "existing" plots
+    valid_old_ind <- intersect(old_ind, valid_idx)
+    current_p <- p_pca
+    if (length(valid_old_ind) > 0) {
+      current_p <- rbind(current_p, v_pca[valid_old_ind, , drop = FALSE])
+    }
+
+    # Calculate minimum distance from ALL pixels to existing plots
+    r_cand_vals <- rep(NA_real_, terra::ncell(r_cand))
+    
+    if (!is.null(current_p) && nrow(current_p) > 0) {
+      min_dists <- apply(as.matrix(proxy::dist(v_pca_valid, current_p)), 1, min)
+      r_cand_vals[valid_idx] <- min_dists
+    } else {
+      # If no existing plots, 
+      # create uniform surface to pick first available candidate
+      r_cand_vals[current_candidates] <- 1
+    }
+
+    terra::values(r_cand) <- r_cand_vals
+
+    # Run focal operation to get mean distance within candidate plot footprints
+    r_rs <- terra::focal(r_cand, w = w_matrix, fun = "mean", na.rm = TRUE)
+
+    # Restrict to `current_candidates` to prevent picking old plots or masked areas
+    rs_vals <- as.numeric(terra::values(r_rs))
+    mask_idx <- setdiff(seq_along(rs_vals), current_candidates)
+    rs_vals[mask_idx] <- -Inf
+
+    if (all(!is.finite(rs_vals))) {
+      message("No possible locations for plot ", i, "/", n_plots, ". Stopping ...")
+      break
+    }
+
+    # Extract central coordinate of selected plot (first occurrence if tied)
+    max_val <- max(rs_vals, na.rm = TRUE)
+    which_max_val <- which(rs_vals == max_val)[1]
+
+    rc <- terra::rowColFromCell(r_rs, which_max_val)
+    sel_rows <- rc[1] + row_offsets
+    sel_cols <- rc[2] + col_offsets
+
+    sel_id <- terra::cellFromRowCol(r_rs, sel_rows, sel_cols)
+    sel_id <- sel_id[!is.na(sel_id)]
+
+    # Generate polygon of selected plot directly using raster cells
+    r_sub <- r_pca[[1]]
+    terra::values(r_sub) <- NA
+    r_sub[sel_id] <- 1
+    p_sub <- terra::as.polygons(r_sub, dissolve = TRUE)
+    
+    # Save geometry and update old indices
+    p_list[[i]] <- sf::st_geometry(sf::st_as_sf(p_sub))
+    old_ind <- c(old_ind, sel_id)
+  }
+
+  # Return
+  return(p_list)
 }
