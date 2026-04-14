@@ -338,12 +338,23 @@ test6 <- plotSelect(
   method = minimaxSelect)
 test6$type <- "minimax"
 
-test_1_6 <- list(
-  test1, 
-  test6)
-test_1_6[[1]]$type <- "meanmin"
+# Test with the kmeans algorithm
+test7 <- plotSelect(
+  r = r,
+  p = p,
+  n_plots = 10,
+  p_new_dim = c(100, 100),
+  r_mask = NULL,
+  method = kmeansSelect)
+test7$type <- "kmeans"
 
-wrap_plots(lapply(test_1_6, function(x) {
+test_1_6_7 <- list(
+  test1, 
+  test6,
+  test7)
+test_1_6_7[[1]]$type <- "meanmin"
+
+wrap_plots(lapply(test_1_6_7, function(x) {
   ggplot() + 
     geom_spatraster(data = r_bg, show.legend = FALSE) +
     scale_fill_manual(values = "grey", na.value = NA, na.translate = FALSE) + 
@@ -358,6 +369,7 @@ wrap_plots(lapply(test_1_6, function(x) {
 # Extract metrics from raster for each existing plot
 test1_ext <- extractPlotMetrics(r, test1, fun = NULL)
 test6_ext <- extractPlotMetrics(r, test6, fun = NULL)
+test7_ext <- extractPlotMetrics(r, test7, fun = NULL)
 # Using FUN = NULL returns the values of all values within each pixel
 
 # Put pixels and existing plots in the same PCA space
@@ -365,21 +377,23 @@ test1_pca <- as.data.frame(PCALandscape(r, test1_ext, center = TRUE, scale. = TR
 test1_pca$type <- "meanmin"
 test6_pca <- as.data.frame(PCALandscape(r, test6_ext, center = TRUE, scale. = TRUE)$p_pca)
 test6_pca$type <- "minimax"
+test7_pca <- as.data.frame(PCALandscape(r, test7_ext, center = TRUE, scale. = TRUE)$p_pca)
+test7_pca$type <- "kmeans"
 
-pca_pt_test_1_6 <- rbind(pca_pt_r, test1_pca, test6_pca, pca_pt_p)
-pca_pt_test_1_6$type <- factor(pca_pt_test_1_6$type,
-  levels = c("Landscape value", "meanmin", "minimax", "Existing plot"))
+pca_pt_test_1_6_7 <- rbind(pca_pt_r, test1_pca, test6_pca, test7_pca, pca_pt_p)
+pca_pt_test_1_6_7$type <- factor(pca_pt_test_1_6_7$type,
+  levels = c("Landscape value", "meanmin", "minimax", "kmeans", "Existing plot"))
 
 ggplot() +
-  geom_point(data = pca_pt_test_1_6, 
+  geom_point(data = pca_pt_test_1_6_7, 
     aes(x = PC1, y = PC2, 
       size = type, colour = type, alpha = type),
       shape = "circle") + 
   scale_colour_discrete(name = NULL) + 
   scale_size_manual(name = NULL, 
-    values = c("Existing plot" = 3, "meanmin" = 3, "minimax" = 3, "Landscape value" = 1)) + 
+    values = c("Existing plot" = 3, "meanmin" = 3, "minimax" = 3, "kmeans" = 3, "Landscape value" = 1)) + 
   scale_alpha_manual(name = NULL, 
-    values = c("Existing plot" = 0.5, "meanmin" = 0.5, "minimax" = 0.5, "Landscape value" = 1)) + 
+    values = c("Existing plot" = 0.5, "meanmin" = 0.5, "minimax" = 0.5, "kmeans" = 0.5, "Landscape value" = 1)) + 
   labs(x = "PC1", y = "PC2") + 
   theme_bw() +
   ggtitle("Structural space coverage") +
@@ -395,16 +409,22 @@ test1_dist_euclidean <- pcaDist(old_pca$r_pca$x,
 test6_dist_euclidean <- pcaDist(old_pca$r_pca$x, 
   as.matrix(test6_pca[,grepl("PC", colnames(test6_pca))]), 
   n_pca = 3, k = 1, method = "euclidean")
+
+test7_dist_euclidean <- pcaDist(old_pca$r_pca$x, 
+  as.matrix(test7_pca[,grepl("PC", colnames(test7_pca))]), 
+  n_pca = 3, k = 1, method = "euclidean")
  
 # Create histograms to compare resulting distances
 data.frame(
   existing = c(old_dist_euclidean), 
   meanmin = c(test1_dist_euclidean),
-  minimax = c(test6_dist_euclidean)) %>% 
+  minimax = c(test6_dist_euclidean),
+  kmeans = c(test7_dist_euclidean)
+  ) %>% 
   pivot_longer(everything()) %>% 
   mutate(name = factor(name, 
-    levels = c("existing", "meanmin", "minimax"),
-    labels = c("Existing plot", "meanmin", "minimax"))) %>% 
+    levels = c("existing", "meanmin", "minimax", "kmeans"),
+    labels = c("Existing plot", "meanmin", "minimax", "kmeans"))) %>% 
   ggplot(., aes(x = value, fill = name)) + 
     geom_histogram(position = "identity", colour = "black") + 
     facet_wrap(~name, scales = "fixed", ncol = 1) + 
@@ -481,6 +501,30 @@ test_r2 <- plotSelect(
   method = minimaxSelect
 )
 
+test_df3 <- plotSelect(
+  r = r_df_all,
+  p = p_ind,
+  n_plots = 10,
+  p_new_dim = c(100, 100),
+  r_mask = NULL,
+  pca = TRUE,
+  n_pca = 3,
+  coord = c("x", "y"),
+  method = kmeansSelect
+)
+test_df3_coord <- as.data.frame(r_coord[test_df3,])
+
+test_r3 <- plotSelect(
+  r = r,
+  p = p,
+  n_plots = 10,
+  p_new_dim = c(100, 100),
+  r_mask = NULL,
+  pca = TRUE,
+  n_pca = 3,
+  method = kmeansSelect
+)
+
 p_df_r1 <- ggplot() +
   geom_spatraster(data = r[[1]]) + 
   scale_fill_scico(name = "Canopy height (zmax)", palette = "bamako", 
@@ -517,7 +561,25 @@ p_df_r2 <- ggplot() +
     legend.title = element_text(size = 12),
     legend.text = element_text(size = 12))
 
-wrap_plots(p_df_r1, p_df_r2) + 
+p_df_r3 <- ggplot() +
+  geom_spatraster(data = r[[1]]) + 
+  scale_fill_scico(name = "Canopy height (zmax)", palette = "bamako", 
+    na.value = NA) +
+  geom_sf(data = p, fill = NA, colour = "red") + 
+  geom_sf(data = test_r3, fill = NA, colour = "blue", linewidth = 1) + 
+  geom_point(data = test_df3_coord, aes(x = x, y = y ), shape = 21, colour = "black", fill = "cyan", size = 3) +
+  theme_bw() +
+  ggtitle("kmeansSelect") + 
+  labs(
+    x = NULL, 
+    y = NULL) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12))
+
+wrap_plots(p_df_r1, p_df_r2, p_df_r3) + 
   plot_layout(
     nrow = 1,
     guides = "collect")

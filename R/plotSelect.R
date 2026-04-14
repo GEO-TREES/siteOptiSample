@@ -148,6 +148,11 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
   }
 
   # Optional PCA to reduce dimensionality
+  if (terra::nlyr(r) < 2) { 
+    message("Only one variable in `r`. PCA will be skipped")
+    pca <- FALSE
+  }
+
   if (pca) { 
     old_pca <- PCALandscape(r, old_ext, center = TRUE, scale. = TRUE)
     r_pca <- rep(r[[1]], n_pca)
@@ -185,15 +190,17 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
   new_ind <- which(complete.cases(terra::values(r_mask)))
 
   # Implement plot selection algorithm
-  p_list <- method(
+  cand_args <- list(
     r_pca = r_pca,
     p_pca = p_pca,
     old_ind = old_ind,
     new_ind = new_ind,
     n_plots = n_plots,
     p_new_dim = p_new_dim,
-    het_q = het_q
-  )
+    het_q = het_q)
+  acc_args <- names(formals(method))
+  safe_args <- cand_args[intersect(names(cand_args), acc_args)]
+  p_list <- do.call(method, safe_args)
 
   # Prepare output sf object
   if (!is_rast) {
