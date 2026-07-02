@@ -55,8 +55,12 @@ minimaxSelect <- function(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim, he
 
   n_x <- ceiling(p_x / 2)
   n_y <- ceiling(p_y / 2)
-  full_cols <- (2 * n_x) + 1 
-  full_rows <- (2 * n_y) + 1
+  raw_cols <- (2 * n_x) + 1 
+  raw_rows <- (2 * n_y) + 1
+  max_cols <- max(1, (2 * ncol(r_pca)) - 1)
+  max_rows <- max(1, (2 * nrow(r_pca)) - 1)
+  full_cols <- min(raw_cols, max_cols)
+  full_rows <- min(raw_rows, max_rows)
 
   pad_left_x  <- floor((full_cols - p_x) / 2)
   pad_right_x <- ceiling((full_cols - p_x) / 2)
@@ -176,6 +180,8 @@ minimaxSelect <- function(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim, he
     
     # Save geometry and update old indices
     p_list[[i]] <- sf::st_geometry(sf::st_as_sf(p_sub))
+    names(p_list)[[i]] <- paste(sel_id, collapse = ":")
+
     old_ind <- c(old_ind, sel_id)
   }
 

@@ -51,8 +51,12 @@ kmeansSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q = 0.
 
   n_x <- ceiling(p_x / 2)
   n_y <- ceiling(p_y / 2)
-  full_cols <- (2 * n_x) + 1 
-  full_rows <- (2 * n_y) + 1
+  raw_cols <- (2 * n_x) + 1 
+  raw_rows <- (2 * n_y) + 1
+  max_cols <- max(1, (2 * ncol(r_pca)) - 1)
+  max_rows <- max(1, (2 * nrow(r_pca)) - 1)
+  full_cols <- min(raw_cols, max_cols)
+  full_rows <- min(raw_rows, max_rows)
 
   pad_left_x  <- floor((full_cols - p_x) / 2)
   pad_right_x <- ceiling((full_cols - p_x) / 2)
@@ -108,7 +112,8 @@ kmeansSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q = 0.
   }
 
   # Run K-means on the valid candidate space
-  km <- stats::kmeans(v_pca[initial_candidates, , drop = FALSE], centers = n_plots, iter.max = 100, nstart = 10)
+  km <- stats::kmeans(v_pca[initial_candidates, , drop = FALSE], 
+    centers = n_plots, iter.max = 100, nstart = 10)
   centroids <- km$centers
 
   # Selection loop
@@ -159,6 +164,7 @@ kmeansSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q = 0.
     p_sub <- terra::as.polygons(r_sub, dissolve = TRUE)
     
     p_list[[i]] <- sf::st_geometry(sf::st_as_sf(p_sub))
+    names(p_list)[[i]] <- paste(sel_id, collapse = ":")
     
     # Update old_ind so the next plot can't overlap it
     old_ind <- c(old_ind, sel_id)

@@ -29,8 +29,8 @@ existing plots}
 \item{n_plots}{maximum number of new plots to add}
 
 \item{p_new_dim}{optional, dimensions of new plots in the same coordinate
-system as \code{r}. Either a single value for square plots, or a vector of two
-values for rectangular plots. Should be perfectly divisible by the
+system as \code{r}. Either a single value for square plots, or a vector of
+two values for rectangular plots. Should be perfectly divisible by the
 resolution of \code{r}}
 
 \item{r_mask}{optional, a raster which defines a mask of potential plot
@@ -41,25 +41,27 @@ PCA to reduce issues of collinearity among variables. If TRUE, provide
 \code{n_pca}}
 
 \item{n_pca}{optional, the number of PCA axes used to calculate the distance
-between pixels and plots. If not provided and \code{pca} is TRUE, all PCA axes
-are used}
+between pixels and plots. If not provided and \code{pca} is TRUE, all PCA
+axes are used}
 
-\item{coord}{optional, if \code{r} is a dataframe, a character vector containing
-two column names in \code{r} specifying the X and Y coordinates of the grid
-cell centres. Coordinates must form a regular grid}
+\item{coord}{optional, if \code{r} is a dataframe, an optional character vector
+containing two column names in \code{r} specifying the X and Y coordinates of
+the grid cell centres. Coordinates must form a regular grid. If NULL and
+\code{r} is a dataframe, workflow is non-spatial.}
 
 \item{het_q}{optional, numeric value between 0 and 1. Defines a threshold
-to filter out internally heterogeneous candidate locations, preventing plots
-being placed on sharp structural transitions. Represents maximum
-quantile for total focal standard deviation of metrics within
-candidate footprint (e.g., 0.8 excludes top 20\% most heterogeneous
-areas)}
+to filter out internally heterogeneous candidate locations, preventing
+plots being placed on sharp structural transitions. Represents maximum
+quantile for total focal standard deviation of metrics within candidate
+footprint (e.g., 0.8 excludes top 20\% most heterogeneous areas)}
 
 \item{method}{a function to optimally place plots, e.g. \code{meanminSelect()} or
 \code{minimaxSelect()}}
 }
 \value{
-sf dataframe with polygons of proposed new plots, or if \code{r} is a dataframe, a vector of row indices in \code{r} corresponding to the selected rows
+sf dataframe with polygons of proposed new plots, or if \code{r} is a
+dataframe, a vector of row indices in \code{r} corresponding to the selected
+rows
 }
 \description{
 Recommend locations for plots

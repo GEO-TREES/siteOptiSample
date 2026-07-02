@@ -38,16 +38,19 @@ Purpose:
 * Identify optimal locations for new plots to fill gaps in multidimensional forest structure space.
 
 ```{r}
-
 # Import structural metrics raster
 data(san_lorenzo_rast)
 
 # Import polygons of existing plots
 data(san_lorenzo_plots)
 
+# Import stem data from existing plots
+data(san_lorenzo_stems)
+
 # Prepare data objects
 r <- unwrap(san_lorenzo_rast)
 p <- san_lorenzo_plots
+s <- san_lorenzo_stems
 ```
 
 
@@ -514,9 +517,9 @@ data.frame(
       y = "Number of pixels")
 ```
 
-# Part 3: Non-spatial data
+# Part 3: Spatial data as a matrix
 
-`plotSelect()`, `PCALandscape()`, `meanminSelect()`, `minimaxSelect()` and `kmeansSelect()` also work with non-spatial data, as a dataframe or matrix. 
+`plotSelect()`, `PCALandscape()`, `meanminSelect()`, `minimaxSelect()` and `kmeansSelect()` also work with spatial data as a dataframe or matrix. 
 
 ```{r}
 # Extract structural metrics as a non-spatial matrix
@@ -545,7 +548,7 @@ all(PCALandscape(r_df, old_ext, center = TRUE, scale. = TRUE)$r_pca$x == old_pca
 ```{r}
 test_df1 <- plotSelect(
   r = r_df_all,
-  p = p_ind,
+  p = p,
   n_plots = 10,
   p_new_dim = c(100, 100),
   r_mask = NULL,
@@ -569,7 +572,7 @@ test_r1 <- plotSelect(
 
 test_df2 <- plotSelect(
   r = r_df_all,
-  p = p_ind,
+  p = p,
   n_plots = 10,
   p_new_dim = c(100, 100),
   r_mask = NULL,
@@ -591,9 +594,10 @@ test_r2 <- plotSelect(
   method = minimaxSelect
 )
 
+set.seed(9238)  # Set identical seed to ensure identical results
 test_df3 <- plotSelect(
   r = r_df_all,
-  p = p_ind,
+  p = p,
   n_plots = 10,
   p_new_dim = c(100, 100),
   r_mask = NULL,
@@ -604,6 +608,7 @@ test_df3 <- plotSelect(
 )
 test_df3_coord <- as.data.frame(r_coord[test_df3,])
 
+set.seed(9238)  # Set identical seed to ensure identical results
 test_r3 <- plotSelect(
   r = r,
   p = p,
@@ -711,5 +716,43 @@ ggplot() +
     plot.title = element_text(hjust = 0.5),
     legend.title = element_text(size = 12),
     legend.text = element_text(size = 12))
+```
+
+# Part 4: Selecting a subset of existing plots for additional data collection
+
+In this example the goal is to pick 1 ha subplots within a larger plot to
+collect terrestrial LiDAR data. The criteria for picking these plots is that
+they should span a range of above-ground biomass density, and at least one of
+the selected subplots should include some of the largest trees in the plot. 
+
+In this example, the data are entirely non-spatial. No spatial aggregation is performed.
+
+```{r}
+# Aggregate tree data to plot level
+plot_metrics <- s %>%
+  group_by(plot_id) %>%
+  summarise(
+    total_agb = sum(agb_Mg),
+    max_diam = max(diam_cm),
+    sd_diam = sd(diam_cm)
+  ) %>%
+  ungroup()
+
+r_df_agb <- as.data.frame(
+  plot_metrics[, c("total_agb", "max_diam", "sd_diam"), drop = FALSE])
+
+# Run plotSelect 
+plot_sel <- plotSelect(
+  r = r_df_agb,
+  p = NULL,
+  n_plots = 3,
+  pca = FALSE,
+  n_pca = NULL,
+  coord = NULL,
+  method = kmeansSelect
+)
+
+# Print TLS plots
+plot_metrics[plot_sel, ]
 ```
 

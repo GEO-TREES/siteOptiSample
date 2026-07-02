@@ -5,7 +5,7 @@
 \alias{san_lorenzo_plots}
 \title{Plot locations in San Lorenzo}
 \format{
-An object of class \code{sf} (inherits from \code{data.frame}) with 63 rows and 2 columns.
+An object of class \code{sf} (inherits from \code{data.frame}) with 20 rows and 2 columns.
 }
 \usage{
 san_lorenzo_plots

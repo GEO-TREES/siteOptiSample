@@ -13,3 +13,10 @@
 #'
 #' 
 "san_lorenzo_rast"
+
+#' Stem data from existing San Lorenzo plots
+#'
+#' dataframe object of stem data from existing San Lorenzo plots.
+#' 
+#' 
+"san_lorenzo_stems"
