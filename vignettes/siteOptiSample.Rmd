@@ -297,6 +297,8 @@ The `minimaxSelect()` algorithm aims to minimise the maximum distance between pr
 
 The `kmeansSelect()` algorithm aims to capture the structural diversity of the landscape using K-means clustering, which first partitions the available pixels into a number of clusters equal to the number of proposed plots, then identifies the centroid of each cluster and finds the plot closest to that centroid.
 
+The `hypercubeSelect()` algorithm aims to capture the structural diversity of the landscape evenly in multi-dimensional space.
+
 The code below runs `plotSelect()` with a few different options, then compares how they affect plot placement.
 
 ```{r}
@@ -428,13 +430,24 @@ test7 <- plotSelect(
   method = kmeansSelect)
 test7$type <- "kmeans"
 
-test_1_6_7 <- list(
+# Test with the kmeans algorithm
+test8 <- plotSelect(
+  r = r,
+  p = p,
+  n_plots = 10,
+  p_new_dim = c(100, 100),
+  r_mask = NULL,
+  method = hypercubeSelect)
+test8$type <- "hypercube"
+
+test_1_6_7_8 <- list(
   test1, 
   test6,
-  test7)
-test_1_6_7[[1]]$type <- "meanmin"
+  test7,
+  test8)
+test_1_6_7_8[[1]]$type <- "meanmin"
 
-wrap_plots(lapply(test_1_6_7, function(x) {
+wrap_plots(lapply(test_1_6_7_8, function(x) {
   ggplot() + 
     geom_spatraster(data = r_bg, show.legend = FALSE) +
     scale_fill_manual(values = "grey", na.value = NA, na.translate = FALSE) + 
@@ -451,6 +464,7 @@ wrap_plots(lapply(test_1_6_7, function(x) {
 test1_ext <- extractPlotMetrics(r, test1, fun = NULL)
 test6_ext <- extractPlotMetrics(r, test6, fun = NULL)
 test7_ext <- extractPlotMetrics(r, test7, fun = NULL)
+test8_ext <- extractPlotMetrics(r, test8, fun = NULL)
 # Using FUN = NULL returns the values of all values within each pixel
 
 # Put pixels and existing plots in the same PCA space
@@ -460,21 +474,25 @@ test6_pca <- as.data.frame(PCALandscape(r, test6_ext, center = TRUE, scale. = TR
 test6_pca$type <- "minimax"
 test7_pca <- as.data.frame(PCALandscape(r, test7_ext, center = TRUE, scale. = TRUE)$p_pca)
 test7_pca$type <- "kmeans"
+test8_pca <- as.data.frame(PCALandscape(r, test8_ext, center = TRUE, scale. = TRUE)$p_pca)
+test8_pca$type <- "hypercube"
 
-pca_pt_test_1_6_7 <- rbind(pca_pt_r, test1_pca, test6_pca, test7_pca, pca_pt_p)
-pca_pt_test_1_6_7$type <- factor(pca_pt_test_1_6_7$type,
-  levels = c("Landscape value", "meanmin", "minimax", "kmeans", "Existing plot"))
+pca_pt_test_1_6_7_8 <- rbind(pca_pt_r, test1_pca, test6_pca, test7_pca, test8_pca, pca_pt_p)
+pca_pt_test_1_6_7_8$type <- factor(pca_pt_test_1_6_7_8$type,
+  levels = c("Landscape value", "meanmin", "minimax", "kmeans", "hypercube", "Existing plot"))
 
 ggplot() +
-  geom_point(data = pca_pt_test_1_6_7, 
+  geom_point(data = pca_pt_test_1_6_7_8, 
     aes(x = PC1, y = PC2, 
       size = type, colour = type, alpha = type),
       shape = "circle") + 
   scale_colour_discrete(name = NULL) + 
   scale_size_manual(name = NULL, 
-    values = c("Existing plot" = 3, "meanmin" = 3, "minimax" = 3, "kmeans" = 3, "Landscape value" = 1)) + 
+    values = c("Existing plot" = 3, "meanmin" = 3, "minimax" = 3, 
+      "kmeans" = 3, "hypercube" = 3, "Landscape value" = 1)) + 
   scale_alpha_manual(name = NULL, 
-    values = c("Existing plot" = 0.5, "meanmin" = 0.5, "minimax" = 0.5, "kmeans" = 0.5, "Landscape value" = 1)) + 
+    values = c("Existing plot" = 0.5, "meanmin" = 0.5, "minimax" = 0.5, 
+      "kmeans" = 0.5, "hypercube" = 0.5, "Landscape value" = 1)) + 
   labs(x = "PC1", y = "PC2") + 
   theme_bw() +
   ggtitle("Structural space coverage") +
@@ -495,18 +513,23 @@ test6_dist_euclidean <- pcaDist(old_pca$r_pca$x,
 test7_dist_euclidean <- pcaDist(old_pca$r_pca$x, 
   as.matrix(test7_pca[,grepl("PC", colnames(test7_pca))]), 
   n_pca = 3, k = 1, method = "euclidean")
+
+test8_dist_euclidean <- pcaDist(old_pca$r_pca$x, 
+  as.matrix(test8_pca[,grepl("PC", colnames(test8_pca))]), 
+  n_pca = 3, k = 1, method = "euclidean")
  
 # Create histograms to compare resulting distances
 data.frame(
   existing = c(old_dist_euclidean), 
   meanmin = c(test1_dist_euclidean),
   minimax = c(test6_dist_euclidean),
-  kmeans = c(test7_dist_euclidean)
+  kmeans = c(test7_dist_euclidean),
+  hypercube = c(test8_dist_euclidean)
   ) %>% 
   pivot_longer(everything()) %>% 
   mutate(name = factor(name, 
-    levels = c("existing", "meanmin", "minimax", "kmeans"),
-    labels = c("Existing plot", "meanmin", "minimax", "kmeans"))) %>% 
+    levels = c("existing", "meanmin", "minimax", "kmeans", "hypercube"),
+    labels = c("Existing plot", "meanmin", "minimax", "kmeans", "hypercube"))) %>% 
   ggplot(., aes(x = value, fill = name)) + 
     geom_histogram(position = "identity", colour = "black") + 
     facet_wrap(~name, scales = "fixed", ncol = 1) + 
@@ -519,7 +542,7 @@ data.frame(
 
 # Part 3: Spatial data as a matrix
 
-`plotSelect()`, `PCALandscape()`, `meanminSelect()`, `minimaxSelect()` and `kmeansSelect()` also work with spatial data as a dataframe or matrix. 
+`plotSelect()`, `PCALandscape()`, `meanminSelect()`, `minimaxSelect()`, `kmeansSelect()`, and `hypercubeSelect()` also work with spatial data as a dataframe or matrix. 
 
 ```{r}
 # Extract structural metrics as a non-spatial matrix
@@ -620,6 +643,32 @@ test_r3 <- plotSelect(
   method = kmeansSelect
 )
 
+set.seed(9238)  # Set identical seed to ensure identical results
+test_df4 <- plotSelect(
+  r = r_df_all,
+  p = p,
+  n_plots = 10,
+  p_new_dim = c(100, 100),
+  r_mask = NULL,
+  pca = TRUE,
+  n_pca = 3,
+  coord = c("x", "y"),
+  method = hypercubeSelect
+)
+test_df4_coord <- as.data.frame(r_coord[test_df4,])
+
+set.seed(9238)  # Set identical seed to ensure identical results
+test_r4 <- plotSelect(
+  r = r,
+  p = p,
+  n_plots = 10,
+  p_new_dim = c(100, 100),
+  r_mask = NULL,
+  pca = TRUE,
+  n_pca = 3,
+  method = hypercubeSelect
+)
+
 p_df_r1 <- ggplot() +
   geom_spatraster(data = r[[1]]) + 
   scale_fill_scico(name = "Canopy height (zmax)", palette = "bamako", 
@@ -674,9 +723,27 @@ p_df_r3 <- ggplot() +
     legend.title = element_text(size = 12),
     legend.text = element_text(size = 12))
 
-wrap_plots(p_df_r1, p_df_r2, p_df_r3) + 
+p_df_r4 <- ggplot() +
+  geom_spatraster(data = r[[1]]) + 
+  scale_fill_scico(name = "Canopy height (zmax)", palette = "bamako", 
+    na.value = NA) +
+  geom_sf(data = p, fill = NA, colour = "red") + 
+  geom_sf(data = test_r4, fill = NA, colour = "blue", linewidth = 1) + 
+  geom_point(data = test_df4_coord, aes(x = x, y = y ), shape = 21, colour = "black", fill = "cyan", size = 3) +
+  theme_bw() +
+  ggtitle("hypercubeSelect") + 
+  labs(
+    x = NULL, 
+    y = NULL) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12))
+
+wrap_plots(p_df_r1, p_df_r2, p_df_r3, p_df_r4) + 
   plot_layout(
-    nrow = 1,
+    nrow = 2,
     guides = "collect")
 ```
 
