@@ -297,7 +297,7 @@ The `minimaxSelect()` algorithm aims to minimise the maximum distance between pr
 
 The `kmeansSelect()` algorithm aims to capture the structural diversity of the landscape using K-means clustering, which first partitions the available pixels into a number of clusters equal to the number of proposed plots, then identifies the centroid of each cluster and finds the plot closest to that centroid.
 
-The `hypercubeSelect()` algorithm aims to capture the structural diversity of the landscape evenly in multi-dimensional space.
+The `hypercubeSelect()` algorithm captures the landscape's multi-dimensional structural gradient by matching available candidate pixels to theoretical targets generated from equal-probability quantiles of each metric. This approach ensures that proposed plots are distributed evenly across the entire range of structural conditions, representatively sampling both common and rare feature combinations.
 
 The code below runs `plotSelect()` with a few different options, then compares how they affect plot placement.
 
