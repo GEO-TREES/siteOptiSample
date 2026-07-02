@@ -11,7 +11,7 @@ Key use cases include:
 * Identifying optimal locations for new tree-inventory plots.
 * Selecting representative existing plots for terrestrial LiDAR scanning.
 
-See the [vignette](doc/siteOptiSample.html) for examples of how to use the package.
+See the [vignette](./docs/articles/siteOptiSample.html) for examples of how to use the package.
 
 ## Installation
 
