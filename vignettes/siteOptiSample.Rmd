@@ -23,6 +23,8 @@ library(siteOptiSample)
 
 library(dplyr)
 library(tidyr)
+library(tibble)
+library(stringr)
 library(terra)
 library(sf)
 library(ggplot2)
@@ -30,6 +32,9 @@ library(tidyterra)
 library(scico)
 library(GGally)
 library(patchwork)
+
+# Set seed
+seed_val <- 9238
 ```
 
 Purpose:
@@ -44,13 +49,14 @@ data(san_lorenzo_rast)
 # Import polygons of existing plots
 data(san_lorenzo_plots)
 
-# Import stem data from existing plots
-data(san_lorenzo_stems)
+# Import stem data from a single large plot
+data(sample_stems)
 
 # Prepare data objects
 r <- unwrap(san_lorenzo_rast)
 p <- san_lorenzo_plots
-s <- san_lorenzo_stems
+s <- sample_stems
+
 ```
 
 
@@ -61,7 +67,7 @@ ggcorr(as.data.frame(r), label = TRUE)
 
 The structural metrics are highly correlated.
 
-# Part 1: Test individual functions
+# Part 1: Assess current plot representativeness
 
 Extract metrics from raster for each existing plot. `extractPlotMetrics()` returns a dataframe of values in the same row order as `p`. 
 
@@ -234,11 +240,11 @@ ggplot() +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-Classify pixels by how well-represented they are by the plots, then create a map of pixel classification. `classifLandscape()` returns a dataframe with the distances of each pixel in `r_pca` to its nearest plot in structural space, and its classification as well-represented or poorly represented by the plots, according to the confidence interval threshold provided in argument `ci`. 
+Classify pixels by how well-represented they are by the plots, then create a map of pixel classification. `classifRepres()` returns a dataframe with the distances of each pixel in `r_pca` to its nearest plot in structural space, and its classification as well-represented or poorly represented by the plots, according to the confidence interval threshold provided in argument `ci`. 
 
 ```{r}
 # Run pixel classification
-old_pca_classif <- classifLandscape(
+old_pca_classif <- classifRepres(
   r_pca = old_pca$r_pca$x, 
   p = old_pca$p_pca, 
   n_pca = 3, 
@@ -288,10 +294,9 @@ ggplot(old_pca_classif_df, aes(PC1, PC2, colour = group)) +
 
 The `plotSelect()` function optimally locates plots based on the relative distances of pixels in structural space, optionally taking into account existing plots.
 
-Two algorithms for locating new plots are available:
+These algorithms are available for locating new plots:
 
 The `meanminSelect()` algorithm aims to minimize the mean distance of all pixels to their nearest plot in PCA space, iteratively placing new plots in pixels that most reduce the average pixel-to-nearest-plot distance. For each candidate pixel, compute how adding a plot to that pixel would decrease the mean pixel-to-nearest-plot distance, then choose the pixel that yields the largest decrease in mean distance. As a result, plots concentrate in common areas structural space.
-
 
 The `minimaxSelect()` algorithm aims to minimise the maximum distance between proposed plots and existing plots, iteratively placing new plots in pixels with structural attributes most dissimilar to existing plots. For each candidate pixel, compute the distance to the nearest existing plot, then choose the pixel with the highest distance value. As a result, plots occupy structural extremes.
 
@@ -540,6 +545,163 @@ data.frame(
       y = "Number of pixels")
 ```
 
+
+The `classifVeg()` function can be used to classify pixels into discrete
+vegetation types according to their structural signature. You could then either
+stratify the location of new plots among these structural types by splitting
+the raster and then using `plotSelect()` like before, or simply use the
+vegetation classification as a guide to then locate new plots manually.
+`classifVeg()` can run two different clustering algorithms:
+
+* K-means: Groups pixels by minimising the total variance within clusters.
+  Tends to create spherical, roughly equal-sized clusters in PCA space.
+* Gaussian Mixture Models (GMMs): Fits a mixture of multidimensional
+  probability distributions to the data. Unlike K-means, GMM allows clusters to
+  have different sizes, shapes, and orientations in PCA space. This makes it
+  more effective for preserving rare outlier clusters.
+
+
+```{r}
+# Classify according to K-means with three clusters
+classif_kmeans3 <- classifVeg(
+  r_pca = old_pca$r_pca$x, 
+  k = 3, 
+  method = "kmeans", 
+  n_pca = 3,
+  nstart = 25
+)
+
+# Create raster from K-means classification
+r_kmeans3 <- r[[1]]
+values(r_kmeans3)[!is.na(values(r_kmeans3))] <- classif_kmeans3
+r_kmeans3 <- as.factor(r_kmeans3)
+
+# Create plot
+ggplot() +
+  geom_spatraster(data = r_kmeans3) + 
+  scale_fill_discrete(name = "Cluster", na.value = NA, na.translate = FALSE) +
+  theme_bw() +
+  ggtitle("K-means vegetation clusters") +
+  labs(
+    x = NULL, 
+    y = NULL) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12))
+
+# Classify according to GMM with three clusters
+classif_gmm3 <- classifVeg(
+  r_pca = old_pca$r_pca$x, 
+  k = 3, 
+  method = "gmm", 
+  n_pca = 3
+)
+
+# Create raster from GMM classification
+r_gmm3 <- r[[1]]
+values(r_gmm3)[!is.na(values(r_gmm3))] <- classif_gmm3
+r_gmm3 <- as.factor(r_gmm3)
+
+# Create plot
+ggplot() +
+  geom_spatraster(data = r_gmm3) + 
+  scale_fill_discrete(name = "Cluster", na.value = NA, na.translate = FALSE) +
+  theme_bw() +
+  ggtitle("Gaussian Mixture Model vegetation clusters") +
+  labs(
+    x = NULL, 
+    y = NULL) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12))
+
+# Compare cluster attribution between K-means and GMM
+table("Kmeans" = values(r_kmeans3), "GMM" = values(r_gmm3))
+```
+
+To avoid an extremely patchy mosaic of vegetation classes, it is advisable to
+`aggregate()` fine spatial resolution rasters to a lower resolution. You can
+also use the `spatial_weight` argument with spatial coordinates (`coords`) to
+encourage spatial clustering. 
+
+```{r}
+# Aggregate 50x50 m raster to 100x100 m
+r_agg100 <- aggregate(r, 2, method = "mean")
+r_agg100_pca <- PCALandscape(r, center = TRUE, scale. = TRUE)
+
+# Classify according to K-means with three clusters
+classif_kmeans3_agg100 <- classifVeg(
+  r_pca = old_pca$r_pca$x, 
+  k = 3, 
+  method = "kmeans", 
+  n_pca = 3,
+  nstart = 25
+)
+
+# Create raster from K-means classification
+r_kmeans3_agg100 <- r[[1]]
+values(r_kmeans3_agg100)[!is.na(values(r_kmeans3_agg100))] <- classif_kmeans3_agg100
+r_kmeans3_agg100 <- as.factor(r_kmeans3_agg100)
+
+# Create plot
+ggplot() +
+  geom_spatraster(data = r_kmeans3_agg100) + 
+  scale_fill_discrete(name = "Cluster", na.value = NA, na.translate = FALSE) +
+  theme_bw() +
+  ggtitle("K-means vegetation clusters") +
+  labs(
+    x = NULL, 
+    y = NULL) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12))
+```
+
+```{r}
+coord_df <- crds(r, na.rm = TRUE)
+
+classif_gmm_spwt_list <- lapply(seq(0, 1, 0.1), function(x) { 
+  classif <- classifVeg(
+    r_pca = old_pca$r_pca$x, 
+    k = 3, 
+    method = "kmeans", 
+    n_pca = 3,
+    spatial_weight = x,
+    coords = coord_df,
+  )
+
+  r_classif <- r[[1]]
+  values(r_classif)[!is.na(values(r_classif))] <- classif
+  r_classif <- as.factor(r_classif)
+
+  return(r_classif)
+})
+
+wrap_plots(lapply(classif_gmm_spwt_list, function(x) {
+  ggplot() +
+    geom_spatraster(data = x) + 
+    scale_fill_discrete(name = "Cluster", na.value = NA, na.translate = FALSE) +
+    theme_bw() +
+    labs(
+      x = NULL, 
+      y = NULL) + 
+    theme(
+      plot.title = element_text(hjust = 0.5),
+      legend.position = "bottom",
+      legend.title = element_text(size = 12),
+      legend.text = element_text(size = 12))
+})) + 
+  plot_layout(guides = "collect", axes = "collect") & 
+  theme(legend.position = "none")
+```
+
+
 # Part 3: Spatial data as a matrix
 
 `plotSelect()`, `PCALandscape()`, `meanminSelect()`, `minimaxSelect()`, `kmeansSelect()`, and `hypercubeSelect()` also work with spatial data as a dataframe or matrix. 
@@ -617,7 +779,7 @@ test_r2 <- plotSelect(
   method = minimaxSelect
 )
 
-set.seed(9238)  # Set identical seed to ensure identical results
+set.seed(seed_val)  # Set identical seed to ensure identical results
 test_df3 <- plotSelect(
   r = r_df_all,
   p = p,
@@ -631,7 +793,7 @@ test_df3 <- plotSelect(
 )
 test_df3_coord <- as.data.frame(r_coord[test_df3,])
 
-set.seed(9238)  # Set identical seed to ensure identical results
+set.seed(seed_val)  # Set identical seed to ensure identical results
 test_r3 <- plotSelect(
   r = r,
   p = p,
@@ -643,7 +805,7 @@ test_r3 <- plotSelect(
   method = kmeansSelect
 )
 
-set.seed(9238)  # Set identical seed to ensure identical results
+set.seed(seed_val)  # Set identical seed to ensure identical results
 test_df4 <- plotSelect(
   r = r_df_all,
   p = p,
@@ -657,7 +819,7 @@ test_df4 <- plotSelect(
 )
 test_df4_coord <- as.data.frame(r_coord[test_df4,])
 
-set.seed(9238)  # Set identical seed to ensure identical results
+set.seed(seed_val)  # Set identical seed to ensure identical results
 test_r4 <- plotSelect(
   r = r,
   p = p,
@@ -747,7 +909,12 @@ wrap_plots(p_df_r1, p_df_r2, p_df_r3, p_df_r4) +
     guides = "collect")
 ```
 
-`plotSelect()` also has argument `het_q`, a numeric value between 0 and 1 defining a threshold to filter out internally heterogeneous candidate plot locations. This prevents plots being placed on sharp structural transitions. `het_q` represents the maximum quantile for the total focal standard deviation of metrics within candidate plot footprint, e.g. 0.8 excludes the top 20% most heterogeneous areas. 
+`plotSelect()` also has argument `het_q`, a numeric value between 0 and 1
+defining a threshold to filter out internally heterogeneous candidate plot
+locations. This prevents plots being placed on sharp structural transitions.
+`het_q` represents the maximum quantile for the total focal standard deviation
+of metrics within candidate plot footprint, e.g. 0.8 excludes the top 20% most
+heterogeneous areas. 
 
 ```{r}
 het_q_list <- lapply(seq(0.2, 1, 0.2), function(x) { 
@@ -785,41 +952,287 @@ ggplot() +
     legend.text = element_text(size = 12))
 ```
 
-# Part 4: Selecting a subset of existing plots for additional data collection
+# Part 4: Selecting 1 ha TLS plots based on stem size distribution
 
-In this example the goal is to pick 1 ha subplots within a larger plot to
-collect terrestrial LiDAR data. The criteria for picking these plots is that
-they should span a range of above-ground biomass density, and at least one of
-the selected subplots should include some of the largest trees in the plot. 
+This additional code is somewhat separate to the main package, but is included
+here to document one approach for selecting 100x100 m (1 ha) TLS plots for
+GEO-TREES sites. 
 
-In this example, the data are entirely non-spatial. No spatial aggregation is performed.
+In GEO-TREES, TLS plots should sample a range of stem sizes and forest
+composition. We first divide the plot into three habitat types. We then pick
+one plot which represents each habitat. We assume that in old-growth tropical
+forest any 1 ha chunk will include sufficient numbers of small stems, so we
+focus on sampling the large rare individuals that are responsible for the most
+biomass.
+
+In this example, a dataframe of stem measurements is provided for one large
+ForestGEO style plot. Each stem has a diameter measurement and XY stem map
+coordinates. The plot is 400x400 m (16 ha) and is divided into 20x20 m
+quadrats. We will use the 20x20 m quadrats to align 100x100 m (1 ha) TLS
+subplots. 
 
 ```{r}
-# Aggregate tree data to plot level
-plot_metrics <- s %>%
-  group_by(plot_id) %>%
-  summarise(
-    total_agb = sum(agb_Mg),
-    max_diam = max(diam_cm),
-    sd_diam = sd(diam_cm)
-  ) %>%
-  ungroup()
+# Load additional packages
+library(vegan)
+library(cluster)
+```
 
-r_df_agb <- as.data.frame(
-  plot_metrics[, c("total_agb", "max_diam", "sd_diam"), drop = FALSE])
+First determine the habitat types. The code below shows two different
+clustering methods: hierarchical clustering `hclust()` using the "ward.D2"
+algorithm, and partitioning around medoids using `cluster::pam()`. We subset
+the stem data to only stems larger than 10 cm diameter. 
 
-# Run plotSelect 
-plot_sel <- plotSelect(
-  r = r_df_agb,
-  p = NULL,
-  n_plots = 3,
-  pca = FALSE,
-  n_pca = NULL,
-  coord = NULL,
-  method = kmeansSelect
-)
+```{r}
+# Subset to stems >= 10 cm diameter. 
+# Calculate the basal area of each stem.
+# Extract row and column of each 20x20 m quadrat.
+s_ge10 <- s %>% 
+  filter(diam >= 10) %>% 
+  mutate(
+    ba = pi * (diam / 2)^2,
+    col = as.numeric(str_sub(quadrat, 1, 2)),
+    row = as.numeric(str_sub(quadrat, 3, 4)))
 
-# Print TLS plots
-plot_metrics[plot_sel, ]
+# Create a community matrix. Basal area per species (columns) within each quadrat (rows)
+s_agg <- aggregate(ba ~ quadrat + species, data = s_ge10, FUN = sum)
+mat <- as.data.frame.matrix(xtabs(ba ~ quadrat + species, data = s_agg))
+
+# Hellinger transformation of community matrix
+# Bray-Curtis dissimilarity matrix
+mat_hell <- decostand(mat, method = "hellinger")
+dist_bc <- vegdist(mat_hell, method = "bray")
+
+# Hierarchical clustering method 
+hc <- hclust(dist_bc, method = "ward.D2")
+hc_clust <- cutree(hc, k = 3)
+
+# Partitioning around medoids method
+bc_pam <- pam(dist_bc, k = 3)
+pam_clust <- bc_pam$clustering
+```
+
+Compare the two clustering approaches:
+
+```{r}
+# Compare the two clustering approaches
+stopifnot(all(names(hc_clust) == names(pam_clust)))
+table(hc_clust, pam_clust)
+
+# Create dataframe of clusters per quadrat 
+clust_df <- data.frame(
+  quadrat = names(hc_clust),
+  hc_clust = as.character(hc_clust),
+  pam_clust = as.character(pam_clust)) %>% 
+  mutate(
+    col = as.numeric(str_sub(quadrat, 1, 2)),
+    row = as.numeric(str_sub(quadrat, 3, 4)))
+
+s_clust <- s_ge10 %>% 
+  left_join(., clust_df, by = c("quadrat", "col", "row"))
+
+hc_clust_tile <- ggplot(clust_df, aes(x = col, y = row, fill = hc_clust)) + 
+  geom_tile() + 
+  theme_bw() + 
+  coord_equal() + 
+  ggtitle("Hierarchical clustering")
+
+pam_clust_tile <- ggplot(clust_df, aes(x = col, y = row, fill = pam_clust)) + 
+  geom_tile() + 
+  theme_bw() + 
+  coord_equal() + 
+  ggtitle("Partitioning around medoids")
+
+wrap_plots(hc_clust_tile, pam_clust_tile)
+```
+
+Next, we find 100x100 m chunks within the plot that contain a sufficient number
+of quadrats of a particular habitat type (>= 50%). 
+
+```{r}
+# For each habitat type find 1 ha chunks in moving window with >25% quadrats of that type
+window_size <- 5  # 100 / 20 = 5
+purity_threshold <- 0.5 # At least 50% 
+habitat_types <- unique(clust_df$pam_clust)
+
+valid_chunks <- data.frame()
+
+min_col <- min(clust_df$col, na.rm = TRUE)
+max_col <- max(clust_df$col, na.rm = TRUE)
+min_row <- min(clust_df$row, na.rm = TRUE)
+max_row <- max(clust_df$row, na.rm = TRUE)
+
+# Safety check: prevent the loop from running backwards if the grid is too narrow
+if ((max_col - min_col + 1) >= window_size && (max_row - min_row + 1) >= window_size) {
+  
+  # For each habitat type
+  for (hab in habitat_types) {
+    # For each window position
+    for (c in min_col:(max_col - window_size + 1)) {
+      for (r in min_row:(max_row - window_size + 1)) {
+        
+        window_quads <- subset(clust_df, col >= c & col < (c + window_size) & 
+          row >= r & row < (r + window_size))
+        
+        # Calculate proportion based on pam_clust
+        purity <- sum(window_quads$pam_clust == hab, na.rm = TRUE) / (window_size^2)
+        
+        if (purity >= purity_threshold) {
+          valid_chunks <- rbind(valid_chunks, data.frame(
+            pam_clust = hab,
+            col_start = c, col_end = c + window_size - 1,
+            row_start = r, row_end = r + window_size - 1,
+            quadrat_count = sum(window_quads$pam_clust == hab, na.rm = TRUE),
+            purity = purity
+          ))
+        }
+      }
+    }
+  }
+  
+  # Sort results by habitat type, then highest purity
+  if (nrow(valid_chunks) > 0) {
+    valid_chunks <- valid_chunks[order(valid_chunks$pam_clust, -valid_chunks$purity), ]
+    rownames(valid_chunks) <- NULL
+  }
+  
+} else {
+  message("Grid is too small for a ", window_size, "x", window_size, " window.")
+}
+
+# Add boundary coordinates to the valid_chunks dataframe
+valid_chunks$xmin <- valid_chunks$col_start - 0.5
+valid_chunks$xmax <- valid_chunks$col_end + 0.5
+valid_chunks$ymin <- valid_chunks$row_start - 0.5
+valid_chunks$ymax <- valid_chunks$row_end + 0.5
+quadrat_size <- 20 
+valid_chunks$xmin_m <- (valid_chunks$col_start - 1) * quadrat_size
+valid_chunks$xmax_m <- valid_chunks$col_end * quadrat_size
+valid_chunks$ymin_m <- (valid_chunks$row_start - 1) * quadrat_size
+valid_chunks$ymax_m <- valid_chunks$row_end * quadrat_size
+valid_chunks$chunk_id <- 1:nrow(valid_chunks)
+```
+
+```{r}
+# Plot the distribution of valid chunks for each habitat type
+ggplot(s_clust, aes(x = x, y = y)) + 
+  geom_point(aes(colour = pam_clust), alpha = 0.1) + 
+  geom_rect(data = valid_chunks, 
+    inherit.aes = FALSE,
+    aes(
+      xmin = xmin_m, xmax = xmax_m, 
+      ymin = ymin_m, ymax = ymax_m, 
+      colour = as.character(pam_clust)), 
+    fill = NA, linetype = "dotted") +
+  facet_wrap(~pam_clust) + 
+  theme_bw() +
+  theme(legend.position = "none") + 
+  coord_equal() +
+  labs(colour = "Habitat Type", x = "X (m)", y = "Y (m)")
+```
+
+For each candidate chunk, calculate the 95th percentile of stem diameter, then
+pick the chunk with the highest value for each quadrat. This could be changed
+to the total basal area or any other metric.
+
+```{r}
+# Define stem diameter quantile threshold
+q <- 1
+
+# Calculate 95th percentile of stem diameter for each valid chunk
+valid_chunks$diam_q <- sapply(seq_len(nrow(valid_chunks)), function(i) {
+  c_start <- valid_chunks$col_start[i]
+  c_end   <- valid_chunks$col_end[i]
+  r_start <- valid_chunks$row_start[i]
+  r_end   <- valid_chunks$row_end[i]
+  
+  # Filter stems that fall inside 5x5 chunk
+  chunk_stems <- subset(s_ge10, col >= c_start & col <= c_end & row >= r_start & row <= r_end)
+  
+  if (nrow(chunk_stems) > 0) {
+    # return(quantile(chunk_stems$diam, probs = q, na.rm = TRUE, names = FALSE))
+    return(max(chunk_stems$diam, na.rm = TRUE))
+  } else {
+    return(0)
+  }
+})
+
+# Sort chunks by largest tree diameter descending. 
+# If there is a tie in tree size, use purity, then a random value
+valid_chunks$random_tiebreaker <- runif(nrow(valid_chunks))
+valid_chunks_sorted <- valid_chunks[
+  order(
+    -valid_chunks$diam_q, 
+    -valid_chunks$purity,
+    valid_chunks$random_tiebreaker), ]
+
+# Greedy selection to ensure selected 100x100 m chunks do not overlap
+selected_chunks <- data.frame()
+habitats_needed <- unique(valid_chunks_sorted$pam_clust)
+
+# Helper function: Returns TRUE if two chunks overlap
+check_overlap <- function(box1, box2) {
+  overlap_col <- (box1$col_start <= box2$col_end) && (box1$col_end >= box2$col_start)
+  overlap_row <- (box1$row_start <= box2$row_end) && (box1$row_end >= box2$row_start)
+  return(overlap_col && overlap_row)
+}
+
+# Iterate through the sorted list and select the best non-overlapping chunks
+for (i in 1:nrow(valid_chunks_sorted)) {
+  candidate <- valid_chunks_sorted[i, ]
+  
+  # Skip if already selected a plot for this habitat type
+  if (candidate$pam_clust %in% selected_chunks$pam_clust) { next }
+  
+  # Check if the candidate overlaps with any chunks already selected
+  overlaps <- FALSE
+  if (nrow(selected_chunks) > 0) {
+    for (j in 1:nrow(selected_chunks)) {
+      if (check_overlap(candidate, selected_chunks[j, ])) {
+        overlaps <- TRUE
+        break
+      }
+    }
+  }
+  
+  # Otherwise, select the chunk
+  if (!overlaps) {
+    selected_chunks <- rbind(selected_chunks, candidate)
+  }
+  
+  # Stop early if all habitat types have a plot
+  if (nrow(selected_chunks) == length(habitats_needed)) {
+    break
+  }
+}
+```
+
+Finally plot out the chosen plots along with the original stem data:
+
+```{r}
+s_biggest <- s_clust %>% 
+  group_by(pam_clust) %>% 
+  filter(diam == max(diam))
+
+# Plot the chosen quadrats with the original stem data
+ggplot(s_clust, aes(x = x, y = y)) + 
+  geom_point(aes(colour = as.character(pam_clust), size = diam, alpha = diam)) + 
+  geom_rect(data = selected_chunks, 
+            inherit.aes = FALSE,
+            aes(xmin = xmin_m, xmax = xmax_m, 
+                ymin = ymin_m, ymax = ymax_m, 
+                colour = as.character(pam_clust)),
+            fill = NA, 
+            linewidth = 1.2, 
+            linetype = "solid") + # Switched to solid to signify final selection
+  geom_point(data = s_biggest, 
+    aes(x = x, y = y, fill = pam_clust), 
+    shape = 21, colour = "black") + 
+  scale_fill_discrete(name = "Habitat type") + 
+  scale_colour_discrete(name = "Habitat type") + 
+  scale_radius(name = "Stem diameter (cm)", range = c(1, 10)) + 
+  scale_alpha(name = "Stem diameter (cm)", range = c(0.1, 1)) + 
+  theme_bw() +
+  coord_equal() +
+  labs(x = "X (m)", y = "Y (m)")
 ```
 

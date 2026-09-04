@@ -11,10 +11,11 @@
 #' @param ci quantile threshold for distances, e.g. 0.95 = 95th percentile of
 #'     distances among plots 
 #' 
+#' @importFrom stats quantile
+#'
 #' @export
 #' 
-
-classifLandscape <- function(r_pca, p, p_new = NULL, 
+classifRepres <- function(r_pca, p, p_new = NULL, 
   n_pca = 3, ci = 0.95) {
 
   # Extract PCA scores from chosen PCs
@@ -46,10 +47,10 @@ classifLandscape <- function(r_pca, p, p_new = NULL,
   }
 
   # Choose cutoff — e.g. 95th percentile of plot distances
-  p_cutoff <- quantile(p_dist, ci)
+  p_cutoff <- stats::quantile(p_dist, ci)
 
   if (!is.null(p_new)) { 
-    p_all_cutoff <- quantile(p_all_dist, ci)
+    p_all_cutoff <- stats::quantile(p_all_dist, ci)
   }
 
   # Flag pixels that are too far from plots

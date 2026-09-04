@@ -30,7 +30,7 @@
 #' 
 #' @import terra
 #' @import sf
-#' @importFrom stats kmeans
+#' @importFrom stats kmeans quantile
 #' 
 #' @export
 #' 
@@ -88,7 +88,7 @@ kmeansSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q = 0.
       r_het <- sum(r_sd, na.rm = TRUE)
       
       het_vals <- terra::values(r_het)[base_candidates]
-      het_cutoff <- quantile(het_vals, probs = het_q, na.rm = TRUE)
+      het_cutoff <- stats::quantile(het_vals, probs = het_q, na.rm = TRUE)
       het_safe_centers <- which(terra::values(r_het) <= het_cutoff)
     }
   } else {

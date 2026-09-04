@@ -35,7 +35,7 @@
 #' @import terra
 #' @import sf
 #' @importFrom stats quantile
-#' 
+
 #' @export
 #'
 hypercubeSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q = 0.8) { 
@@ -68,7 +68,7 @@ hypercubeSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q =
   if (!is.null(het_q)) {
     r_sd <- terra::focal(r_pca, w = weights, fun = "sd", na.rm = TRUE)
     r_het <- sum(r_sd, na.rm = TRUE)
-    het_cutoff <- quantile(terra::values(r_het)[base_candidates], probs = het_q, na.rm = TRUE)
+    het_cutoff <- stats::quantile(terra::values(r_het)[base_candidates], probs = het_q, na.rm = TRUE)
     het_safe_centers <- which(terra::values(r_het) <= het_cutoff)
   } else {
     het_safe_centers <- seq_len(terra::ncell(r_pca))
@@ -81,7 +81,7 @@ hypercubeSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q =
   
   # Use full valid space for quantile calculation
   for (d in seq_len(n_dim)) {
-    target_vals <- quantile(v_pca[base_candidates, d], probs = quant_probs, na.rm = TRUE)
+    target_vals <- stats::quantile(v_pca[base_candidates, d], probs = quant_probs, na.rm = TRUE)
     target_matrix[, d] <- sample(target_vals)
   }
 

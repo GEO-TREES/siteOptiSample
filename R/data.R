@@ -14,9 +14,9 @@
 #' 
 "san_lorenzo_rast"
 
-#' Stem data from existing San Lorenzo plots
+#' Stem data from 400x400 m (16 ha) plot
 #'
-#' dataframe object of stem data from existing San Lorenzo plots.
+#' dataframe object of stem data from one plot.
 #' 
 #' 
-"san_lorenzo_stems"
+"sample_stems"

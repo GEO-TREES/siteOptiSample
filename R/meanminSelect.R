@@ -99,7 +99,7 @@ meanminSelect <- function(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim, he
       
       # Find the threshold value based ONLY on pixels inside the user's mask
       het_vals <- terra::values(r_het)[base_candidates]
-      het_cutoff <- quantile(het_vals, probs = het_q, na.rm = TRUE)
+      het_cutoff <- stats::quantile(het_vals, probs = het_q, na.rm = TRUE)
       
       # Identify all center pixels whose footprint falls below the variance threshold
       het_safe_centers <- which(terra::values(r_het) <= het_cutoff)
