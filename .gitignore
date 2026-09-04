@@ -3,4 +3,5 @@ img/
 old/
 inst/doc
 /Meta/
-/doc/
+/doc/*.R
+/doc/*.Rmd
