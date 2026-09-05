@@ -16,12 +16,22 @@
 #' @export
 #' 
 pcaDist <- function(x, y, w = NULL, n_pca = 3, k = 1, method = "euclidean") {
+
+  # Check input
+  if (n_pca > ncol(x)) { 
+    stop("n_pca must be less than the number of principal components in x")
+  }
+
+  if (ncol(x) != ncol(y)) { 
+    stop("The number of principal components in x must be equal to the number in y")
+  }
+
   # Calculate nearest neighbor distances
   # For each landscape pixel, find distance to nearest plot
   if (method == "mahalanobis") {
-    dists_mat <- mahalanobisDist(x[,1:n_pca], y[,1:n_pca], w)
+    dists_mat <- mahalanobisDist(x[,1:n_pca, drop = FALSE], y[,1:n_pca, drop = FALSE], w)
   } else if (method == "euclidean") {
-    dists_mat <- euclideanDist(x[,1:n_pca], y[,1:n_pca], w)
+    dists_mat <- euclideanDist(x[,1:n_pca, drop = FALSE], y[,1:n_pca, drop = FALSE], w)
   } else {
     stop("method must be either 'euclidean' or 'mahalanobis'")
   }
