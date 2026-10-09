@@ -140,7 +140,7 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     r_pca <- rep(r[[1]], n_pca)
     v_pca <- matrix(NA, nrow = terra::ncell(r_pca), ncol = n_pca)
     v_pca[complete.cases(terra::values(r)), ] <- old_pca$r_pca$x[, 1:n_pca, drop = FALSE]
-    terra::setValues(r_pca, v_pca)
+    r_pca <- terra::setValues(r_pca, v_pca)
     names(r_pca) <- colnames(old_pca$r_pca$x[, 1:n_pca, drop = FALSE])
     
     if (!is.null(p)) {
