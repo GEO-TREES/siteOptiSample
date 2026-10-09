@@ -4,7 +4,18 @@
 \alias{minimaxSelect}
 \title{Iteratively add candidate plots using the minimax algorithm}
 \usage{
-minimaxSelect(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim, het_q)
+minimaxSelect(
+  r_pca,
+  p_pca = NULL,
+  old_ind = NULL,
+  new_ind = NULL,
+  n_plots,
+  p_new_dim,
+  het_q = NULL,
+  min_dist = NULL,
+  r_cost = NULL,
+  cost_tol = 0.1
+)
 }
 \arguments{
 \item{r_pca}{\code{SpatRaster} of PCA scores or raw structural metrics.}
@@ -29,6 +40,19 @@ being placed on sharp structural transitions. Represents maximum
 quantile for total focal standard deviation of metrics within
 candidate footprint (e.g., 0.8 excludes top 20\% most heterogeneous
 areas).}
+
+\item{min_dist}{optional, minimum distance between the edges of a new plot
+and any other plot, new or existing, in the units of \code{r_pca}.}
+
+\item{r_cost}{optional, \code{SpatRaster} with the same geometry as \code{r_pca}
+describing the cost of accessing each pixel, e.g. travel time. Candidate
+locations where any pixel has a missing cost are excluded. See
+\code{cost_tol}.}
+
+\item{cost_tol}{numeric value between 0 and 1, used if \code{r_cost} is
+supplied. Each plot is placed at the cheapest candidate location whose
+distance to its nearest plot is at least \code{1 - cost_tol} times the
+largest distance among candidates.}
 }
 \value{
 list of \code{sf} polygons for proposed new plots.
@@ -39,8 +63,12 @@ Iteratively add candidate plots using the minimax algorithm
 \details{
 The minimax algorithm aims to minimise the maximum distance between
 proposed plots and existing plots, iteratively placing new plots in
-pixels with structural attributes most dissimilar to existing plots. For
-each candidate pixel, it computes the distance to the nearest existing plot,
-then chooses the pixel with the highest distance value. As a result, plots
+locations with structural attributes most dissimilar to existing plots.
+Each plot is represented by its mean structural values: existing plots
+by \code{p_pca}, and new plots by the mean of the pixels within their
+footprint. For each candidate footprint, it computes the distance to the
+nearest plot, then chooses the candidate with the highest distance
+value. If there are no existing plots, the first plot is placed at the
+candidate most dissimilar to the landscape mean. As a result, plots
 occupy structural extremes.
 }

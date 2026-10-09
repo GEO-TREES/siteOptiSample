@@ -4,10 +4,24 @@
 \alias{kmeansSelect}
 \title{Select candidate plots using K-Means clustering}
 \usage{
-kmeansSelect(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q = 0.8)
+kmeansSelect(
+  r_pca,
+  p_pca = NULL,
+  old_ind = NULL,
+  new_ind = NULL,
+  n_plots,
+  p_new_dim,
+  het_q = 0.8,
+  min_dist = NULL,
+  r_cost = NULL,
+  cost_tol = 0.1
+)
 }
 \arguments{
 \item{r_pca}{\code{SpatRaster} of PCA scores or raw structural metrics.}
+
+\item{p_pca}{optional, PCA values or raw structural metrics of existing
+plots in structural space}
 
 \item{old_ind}{optional, pixel IDs in \code{r_pca} specifying existing plot locations.}
 
@@ -26,6 +40,20 @@ being placed on sharp structural transitions. Represents maximum
 quantile for total focal standard deviation of metrics within
 candidate footprint (e.g., 0.8 excludes top 20\% most heterogeneous
 areas).}
+
+\item{min_dist}{optional, minimum distance between the edges of a new plot
+and any other plot, new or existing, in the units of \code{r_pca}.}
+
+\item{r_cost}{optional, \code{SpatRaster} with the same geometry as \code{r_pca}
+describing the cost of accessing each pixel, e.g. travel time. Candidate
+locations where any pixel has a missing cost are excluded. See
+\code{cost_tol}.}
+
+\item{cost_tol}{numeric value between 0 and 1, used if \code{r_cost} is
+supplied. Each plot is placed at the cheapest candidate location whose
+distance to the cluster centroid is no more than the distance of the
+closest candidate plus \code{cost_tol} times the mean distance between the
+centroid and the members of its cluster.}
 }
 \value{
 list of \code{sf} polygons for proposed new plots.
@@ -35,12 +63,17 @@ Select candidate plots using K-Means clustering
 }
 \details{
 The K-means algorithm aims to capture the full structural diversity of the
-landscape through stratified sampling. It first partitions available
-candidate pixels into structural clusters, equal to the number
-of proposed plots, to identify "ideal" representative centroids in the
-feature space. For each cluster, it iteratively evaluates the available
-candidate pixels and selects the location whose structural attributes are
-closest to the cluster's centroid. As a result, rather than pushing plots
-toward structural extremes, the proposed plots are distributed
-representatively across the dominant structural conditions of the landscape.
+landscape through stratified sampling. The landscape is represented by
+the mean structural values within every possible plot footprint (see
+\code{footprintMetrics()}). These are partitioned into clusters, with one
+cluster per existing plot and one cluster per proposed plot. The
+centroids of the existing plots' clusters are fixed at the existing
+plots' structural values, so new clusters form in parts of
+structural space not already covered by existing plots. For each new
+cluster, starting with the largest, it selects the available
+candidate location whose mean structural attributes are closest to
+the cluster's centroid. As a result, rather than pushing plots toward
+structural extremes, the proposed plots are distributed
+representatively across the dominant structural conditions of the
+landscape.
 }

@@ -1,169 +1,86 @@
 #' Select candidate plots using K-Means clustering 
 #' 
-#' @param r_pca `SpatRaster` of PCA scores or raw structural metrics. 
-#' @param old_ind optional, pixel IDs in `r_pca` specifying existing plot locations. 
-#' @param new_ind optional, pixel IDs in `r_pca` specifying candidate plot locations. 
-#'     If not supplied, the full set of valid pixels in `r_pca` is used.
-#' @param n_plots maximum number of new plots to add.
-#' @param p_new_dim dimensions of new plots in the same coordinate system as `r`. 
-#'      A vector of two values. Should be perfectly divisible by the resolution 
-#'      of `r_pca`. 
-#' @param het_q optional, numeric value between 0 and 1. Defines a threshold 
-#'     to filter out internally heterogeneous candidate locations, preventing plots 
-#'     being placed on sharp structural transitions. Represents maximum 
-#'     quantile for total focal standard deviation of metrics within 
-#'     candidate footprint (e.g., 0.8 excludes top 20% most heterogeneous 
-#'     areas). 
+#' @inheritParams meanminSelect
+#' @param cost_tol numeric value between 0 and 1, used if `r_cost` is
+#'     supplied. Each plot is placed at the cheapest candidate location whose
+#'     distance to the cluster centroid is no more than the distance of the
+#'     closest candidate plus `cost_tol` times the mean distance between the
+#'     centroid and the members of its cluster.
 #' 
 #' @details 
 #' The K-means algorithm aims to capture the full structural diversity of the
-#'      landscape through stratified sampling. It first partitions available
-#'      candidate pixels into structural clusters, equal to the number
-#'      of proposed plots, to identify "ideal" representative centroids in the
-#'      feature space. For each cluster, it iteratively evaluates the available
-#'      candidate pixels and selects the location whose structural attributes are
-#'      closest to the cluster's centroid. As a result, rather than pushing plots
-#'      toward structural extremes, the proposed plots are distributed
-#'      representatively across the dominant structural conditions of the landscape.
+#'      landscape through stratified sampling. The landscape is represented by
+#'      the mean structural values within every possible plot footprint (see
+#'      `footprintMetrics()`). These are partitioned into clusters, with one
+#'      cluster per existing plot and one cluster per proposed plot. The
+#'      centroids of the existing plots' clusters are fixed at the existing
+#'      plots' structural values, so new clusters form in parts of
+#'      structural space not already covered by existing plots. For each new
+#'      cluster, starting with the largest, it selects the available
+#'      candidate location whose mean structural attributes are closest to
+#'      the cluster's centroid. As a result, rather than pushing plots toward
+#'      structural extremes, the proposed plots are distributed
+#'      representatively across the dominant structural conditions of the
+#'      landscape.
 #' 
 #' @return list of `sf` polygons for proposed new plots. 
 #' 
 #' @import terra
 #' @import sf
-#' @importFrom stats kmeans quantile
 #' 
 #' @export
 #' 
-kmeansSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q = 0.8) { 
+kmeansSelect <- function(r_pca, p_pca = NULL, old_ind = NULL, new_ind = NULL, 
+  n_plots, p_new_dim, het_q = 0.8, min_dist = NULL, r_cost = NULL, 
+  cost_tol = 0.1) { 
 
   p_list <- list()
 
-  # Extract data 
-  v_pca <- terra::values(r_pca)
-  valid_idx <- which(complete.cases(v_pca))
-  
-  # Build focal window 
-  res_x <- terra::res(r_pca)[1]
-  res_y <- terra::res(r_pca)[2]
+  ctx <- selectContext(r_pca, p_pca, new_ind, p_new_dim, het_q, min_dist, r_cost)
+  checkCostTol(cost_tol)
+  v_fp <- ctx$v_fp
 
-  p_x <- round(p_new_dim[1] / res_x)
-  p_y <- round(p_new_dim[2] / res_y)
-
-  n_x <- ceiling(p_x / 2)
-  n_y <- ceiling(p_y / 2)
-  raw_cols <- (2 * n_x) + 1 
-  raw_rows <- (2 * n_y) + 1
-  max_cols <- max(1, (2 * ncol(r_pca)) - 1)
-  max_rows <- max(1, (2 * nrow(r_pca)) - 1)
-  full_cols <- min(raw_cols, max_cols)
-  full_rows <- min(raw_rows, max_rows)
-
-  pad_left_x  <- floor((full_cols - p_x) / 2)
-  pad_right_x <- ceiling((full_cols - p_x) / 2)
-  pad_left_y  <- floor((full_rows - p_y) / 2)
-  pad_right_y <- ceiling((full_rows - p_y) / 2)
-
-  w_matrix <- matrix(NA, nrow = full_rows, ncol = full_cols)
-  w_matrix[(pad_left_y + 1):(full_rows - pad_right_y), 
-           (pad_left_x + 1):(full_cols - pad_right_x)] <- 1
-
-  # Pre-compute cell offsets for the selected window
-  pos <- which(w_matrix == 1, arr.ind = TRUE)
-  row_offsets <- pos[,1] - ceiling(nrow(w_matrix) / 2)
-  col_offsets <- pos[,2] - ceiling(ncol(w_matrix) / 2)
-  
-  # Calculate exactly how many pixels constitute a complete, valid plot
-  target_sum <- sum(w_matrix == 1, na.rm = TRUE)
-
-  # Save mask boundaries outside the loop
-  base_candidates <- new_ind
-
-  # Heterogeneity filter 
-  if (!is.null(het_q)) {
-    if (target_sum == 1) {
-      message("Plot size is a single pixel. Internal heterogeneity is 0. Skipping heterogeneity filter...")
-      het_safe_centers <- seq_len(terra::ncell(r_pca))
-    } else {
-      r_sd <- terra::focal(r_pca, w = w_matrix, fun = "sd", na.rm = TRUE)
-      r_het <- sum(r_sd, na.rm = TRUE)
-      
-      het_vals <- terra::values(r_het)[base_candidates]
-      het_cutoff <- stats::quantile(het_vals, probs = het_q, na.rm = TRUE)
-      het_safe_centers <- which(terra::values(r_het) <= het_cutoff)
-    }
-  } else {
-    het_safe_centers <- seq_len(terra::ncell(r_pca))
+  n_distinct <- nrow(unique(ctx$pop))
+  if (n_plots > n_distinct) {
+    message("Only ", n_distinct, " distinct plot locations in the landscape. ",
+      "Reducing number of plots to ", n_distinct, " ...")
+    n_plots <- n_distinct
   }
 
-  # Find initial pool of pixels to cluster
-  r_avail <- r_pca[[1]]
-  terra::values(r_avail) <- 0
-  initial_avail <- setdiff(base_candidates, old_ind)
-  terra::values(r_avail)[initial_avail] <- 1
-  
-  r_safe <- terra::focal(r_avail, w = w_matrix, fun = "sum", na.rm = TRUE)
-  initial_safe <- which(terra::values(r_safe) == target_sum)
-  initial_candidates <- intersect(initial_avail, initial_safe)
-  initial_candidates <- intersect(initial_candidates, het_safe_centers)
-
-  if (length(initial_candidates) < n_plots) {
-    message("No possible locations for plot ", i, "/", n_plots, ". Stopping ...")
-    break
+  if (n_plots == 0) {
+    return(p_list)
   }
 
-  # Run K-means on the valid candidate space
-  km <- stats::kmeans(v_pca[initial_candidates, , drop = FALSE], 
-    centers = n_plots, iter.max = 100, nstart = 10)
+  # Cluster the landscape, holding existing plots fixed as centroids
+  km <- fixedKmeans(ctx$pop, ctx$p_pca, n_plots)
   centroids <- km$centers
+  radius <- km$radius
+
+  # Select plots for the largest clusters first
+  cluster_order <- order(km$size, decreasing = TRUE)
 
   # Selection loop
-  for (i in seq_len(n_plots)) { 
+  for (i in seq_along(cluster_order)) { 
+    j <- cluster_order[i]
     
     # Ensure entire footprint of new plots falls within unoccupied pixels
-    r_avail <- r_pca[[1]]
-    terra::values(r_avail) <- 0
-    avail_idx <- setdiff(base_candidates, old_ind)
-    terra::values(r_avail)[avail_idx] <- 1
-    
-    r_safe <- terra::focal(r_avail, w = w_matrix, fun = "sum", na.rm = TRUE)
-    safe_centers <- which(terra::values(r_safe) == target_sum)
-    
-    # Restrict candidate centers to those with safe footprints
-    current_candidates <- intersect(avail_idx, safe_centers)
-    current_candidates <- intersect(current_candidates, het_safe_centers)
+    current_candidates <- ctxCandidates(r_pca, ctx, old_ind)
 
     if (length(current_candidates) == 0) { 
       message("No possible locations remaining for plot ", i, ". Stopping ...")
       break
     }
 
-    # Extract PCA values for the currently valid candidates
-    cand_pca <- v_pca[current_candidates, , drop = FALSE]
-    target_centroid <- centroids[i, ]
-
-    # Calculate distance between candidates and the target cluster centroid
-    # Using fast vector recycling matrix math
-    dists <- sqrt(colSums((t(cand_pca) - target_centroid)^2))
-
-    # Pick the pixel closest to the centroid
-    best_idx <- which.min(dists)
-    sel_center <- current_candidates[best_idx]
-
-    # Generate polygon coordinates
-    rc <- terra::rowColFromCell(r_pca, sel_center)
-    sel_rows <- rc[1] + row_offsets
-    sel_cols <- rc[2] + col_offsets
-
-    sel_id <- terra::cellFromRowCol(r_pca, sel_rows, sel_cols)
-    sel_id <- sel_id[!is.na(sel_id)]
+    # Pick the candidate closest to the target cluster centroid
+    dists <- distMat(v_fp[current_candidates, , drop = FALSE], 
+      centroids[j, , drop = FALSE])[,1]
+    acceptable <- dists <= min(dists) + cost_tol * radius[j]
+    best <- pickCandidate(dists, acceptable, ctx$cost[current_candidates])
+    sel_center <- current_candidates[best]
+    sel_id <- footprintCells(r_pca, ctx$fp, sel_center)
 
     # Generate polygon
-    r_sub <- r_pca[[1]]
-    terra::values(r_sub) <- NA
-    r_sub[sel_id] <- 1
-    p_sub <- terra::as.polygons(r_sub, dissolve = TRUE)
-    
-    p_list[[i]] <- sf::st_geometry(sf::st_as_sf(p_sub))
+    p_list[[i]] <- footprintPolygon(r_pca, sel_id)
     names(p_list)[[i]] <- paste(sel_id, collapse = ":")
     
     # Update old_ind so the next plot can't overlap it
@@ -171,4 +88,76 @@ kmeansSelect <- function(r_pca, old_ind, new_ind, n_plots, p_new_dim, het_q = 0.
   }
 
   return(p_list)
+}
+
+#' K-means clustering with some centroids held fixed
+#'
+#' @param x numeric matrix of observations
+#' @param fixed optional, numeric matrix of fixed centroids
+#' @param k number of free centroids
+#' @param nstart number of random starts
+#' @param iter_max maximum number of iterations per start
+#'
+#' @return list containing: `centers`: matrix of free centroids, `size`:
+#'     number of observations assigned to each free centroid, and `radius`:
+#'     mean distance between each free centroid and its observations
+#'
+#' @noRd
+#' 
+fixedKmeans <- function(x, fixed = NULL, k, nstart = 10, iter_max = 100) {
+  m <- if (is.null(fixed)) 0 else nrow(fixed)
+  best <- NULL
+
+  for (s in seq_len(nstart)) {
+    # k-means++ seeding, treating fixed centroids as already chosen
+    centers <- matrix(NA_real_, nrow = k, ncol = ncol(x))
+    if (m > 0) {
+      d2 <- nnDist(x, fixed)^2
+    } else {
+      d2 <- rep(1, nrow(x))
+    }
+    for (j in seq_len(k)) {
+      prob <- if (sum(d2) > 0) d2 else rep(1, nrow(x))
+      centers[j, ] <- x[sample.int(nrow(x), 1, prob = prob), ]
+      new_d2 <- distMat(x, centers[j, , drop = FALSE])[,1]^2
+      d2 <- if (j == 1 && m == 0) new_d2 else pmin(d2, new_d2)
+    }
+
+    # Lloyd's algorithm, only updating free centroids
+    for (it in seq_len(iter_max)) {
+      d <- distMat(x, rbind(fixed, centers))
+      assign <- max.col(-d, ties.method = "first") - m
+      new_centers <- centers
+      for (j in seq_len(k)) {
+        members <- which(assign == j)
+        if (length(members) > 0) {
+          new_centers[j, ] <- colMeans(x[members, , drop = FALSE])
+        } else {
+          # Reseed empty cluster at the observation furthest from any centroid
+          new_centers[j, ] <- x[which.max(apply(d, 1, min)), ]
+        }
+      }
+      converged <- max(abs(new_centers - centers)) < 1e-10
+      centers <- new_centers
+      if (converged) {
+        break
+      }
+    }
+
+    d <- distMat(x, rbind(fixed, centers))
+    min_d <- apply(d, 1, min)
+    wss <- sum(min_d^2)
+    if (is.null(best) || wss < best$wss) {
+      assign <- max.col(-d, ties.method = "first") - m
+      best <- list(wss = wss, centers = centers, assign = assign, min_d = min_d)
+    }
+  }
+
+  size <- tabulate(pmax(best$assign, 0), nbins = k)
+  radius <- vapply(seq_len(k), function(j) {
+    members <- which(best$assign == j)
+    if (length(members) > 0) mean(best$min_d[members]) else mean(best$min_d)
+  }, numeric(1))
+
+  list(centers = best$centers, size = size, radius = radius)
 }

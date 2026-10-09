@@ -4,7 +4,19 @@
 \alias{meanminSelect}
 \title{Iteratively add candidate plots using the meanmin algorithm}
 \usage{
-meanminSelect(r_pca, p_pca, old_ind, new_ind, n_plots, p_new_dim, het_q)
+meanminSelect(
+  r_pca,
+  p_pca = NULL,
+  old_ind = NULL,
+  new_ind = NULL,
+  n_plots,
+  p_new_dim,
+  het_q = NULL,
+  min_dist = NULL,
+  r_cost = NULL,
+  cost_tol = 0.1,
+  refine = FALSE
+)
 }
 \arguments{
 \item{r_pca}{\code{SpatRaster} of PCA scores or raw structural metrics.}
@@ -29,6 +41,25 @@ being placed on sharp structural transitions. Represents maximum
 quantile for total focal standard deviation of metrics within
 candidate footprint (e.g., 0.8 excludes top 20\% most heterogeneous
 areas).}
+
+\item{min_dist}{optional, minimum distance between the edges of a new plot
+and any other plot, new or existing, in the units of \code{r_pca}.}
+
+\item{r_cost}{optional, \code{SpatRaster} with the same geometry as \code{r_pca}
+describing the cost of accessing each pixel, e.g. travel time. Candidate
+locations where any pixel has a missing cost are excluded. See
+\code{cost_tol}.}
+
+\item{cost_tol}{numeric value between 0 and 1, used if \code{r_cost} is
+supplied. Each plot is placed at the cheapest candidate location whose
+score is within \code{cost_tol} of the best candidate's score. For
+\code{meanminSelect()}, this is the reduction in mean distance, e.g. 0.1
+accepts candidates that achieve at least 90\% of the best possible
+reduction.}
+
+\item{refine}{logical, if TRUE, the greedy selection is followed by a
+refinement step which swaps selected plots for other candidate
+locations while doing so reduces the mean distance. See Details.}
 }
 \value{
 list of \code{sf} polygons for proposed new plots.
@@ -37,11 +68,29 @@ list of \code{sf} polygons for proposed new plots.
 Iteratively add candidate plots using the meanmin algorithm
 }
 \details{
-The mean-min algorithm aims to minimize the mean distance of all candidate
-locations (pixels or rows) to their nearest plot in structural/PCA space.
-It iteratively places new plots in locations that most reduce the average
-location-to-nearest-plot distance. For each candidate, it computes how
-adding a plot there would decrease the overall mean distance, choosing
-the candidate that yields the largest decrease. As a result, selected plots
-tend to concentrate in the most common/representative areas of structural space.
+The mean-min algorithm aims to minimize the mean distance between every
+possible plot location in the landscape and its nearest plot, in
+structural/PCA space. Representativeness is assessed at the scale of a
+plot: the landscape is represented by the mean structural values
+within every possible plot footprint (see \code{footprintMetrics()}), and
+each plot is represented by its mean structural values: existing plots
+by \code{p_pca}, and new plots by the mean of the pixels within their
+footprint. The algorithm iteratively places new plots in locations
+that most reduce the mean distance. As a result, selected plots tend
+to concentrate in the most common/representative areas of structural
+space.
+
+Greedy selection is not guaranteed to find the set of plots with the lowest
+possible mean distance, because early plots are placed without
+knowledge of later plots. The first plot, for example, is placed at the
+most central location in structural space, which is rarely part of the
+best set of several plots. If \code{refine = TRUE}, after greedy selection
+each new plot is in turn removed and replaced with the candidate
+location which gives the lowest mean distance, given all other plots.
+This is repeated until no swap reduces the mean distance. Existing
+plots are never moved. The result is never worse than greedy
+selection, but takes longer to compute. Refined plots are returned in
+the order they were originally placed by greedy selection. If \code{r_cost}
+is supplied, a plot is only swapped to a location with an equal or
+lower cost.
 }

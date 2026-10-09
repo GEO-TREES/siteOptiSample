@@ -14,7 +14,12 @@ plotSelect(
   n_pca = NULL,
   coord = NULL,
   het_q = NULL,
-  method = meanminSelect
+  min_dist = NULL,
+  r_cost = NULL,
+  cost_tol = 0.1,
+  distance = c("euclidean", "mahalanobis"),
+  method = meanminSelect,
+  ...
 )
 }
 \arguments{
@@ -55,14 +60,69 @@ plots being placed on sharp structural transitions. Represents maximum
 quantile for total focal standard deviation of metrics within candidate
 footprint (e.g., 0.8 excludes top 20\% most heterogeneous areas)}
 
+\item{min_dist}{optional, minimum distance between the edges of a new plot
+and any other plot, new or existing, in the units of \code{r}. Ignored if
+\code{r} is not spatial}
+
+\item{r_cost}{optional, the cost of accessing each location, e.g. travel
+time. If \code{r} is a \code{SpatRaster}, a \code{SpatRaster} with the same geometry
+as \code{r}. If \code{r} is a dataframe, a numeric vector with one value per row
+of \code{r}. Locations with missing costs are excluded. See \code{cost_tol}}
+
+\item{cost_tol}{numeric value between 0 and 1, used if \code{r_cost} is
+supplied. Each plot is placed at the cheapest candidate location whose
+score is within \code{cost_tol} of the best candidate's score. 0 ignores
+cost except to break ties, while larger values give more weight to
+cost. See the documentation of each \code{method} for how the tolerance
+is defined}
+
+\item{distance}{distance metric used to compare locations in structural
+space, either "euclidean" (default) or "mahalanobis". See Details}
+
 \item{method}{a function to optimally place plots, e.g. \code{meanminSelect()} or
 \code{minimaxSelect()}}
+
+\item{...}{additional arguments passed to \code{method}, e.g. \code{refine = TRUE}
+for \code{meanminSelect()}}
 }
 \value{
-sf dataframe with polygons of proposed new plots, or if \code{r} is a
-dataframe, a vector of row indices in \code{r} corresponding to the selected
-rows
+if \code{r} is a \code{SpatRaster}, an sf dataframe with polygons of proposed
+new plots and columns: \code{plot_order}: order of selection, one column per
+structural variable or PCA axis giving the mean value within the plot,
+\code{cost}: mean cost within the plot, if \code{r_cost} is supplied, and
+\code{mean_dist} and \code{max_dist}: see Details. If \code{r} is a dataframe, a vector
+of row indices in \code{r} corresponding to the selected rows, with the same
+diagnostics in the \code{selection} attribute, which also contains a column
+\code{rows} giving the row indices of each plot.
 }
 \description{
 Recommend locations for plots
+}
+\details{
+Diagnostics are returned for each new plot, in the order in which plots
+were selected. Representativeness is measured at the scale of a plot:
+the landscape is represented by the mean structural values within every
+possible plot footprint (see \code{footprintMetrics()}), and each plot by its
+mean structural values. \code{mean_dist} and \code{max_dist} give the mean and
+maximum distance in structural space from every possible plot location
+to its nearest plot, including existing plots and all new plots up to
+and including this one. Plotting \code{mean_dist} against \code{plot_order} shows
+how representativeness improves as plots are added, which can help to
+decide how many plots are needed. The values before adding any new
+plots are stored in the \code{baseline} attribute.
+
+Mahalanobis distance accounts for differences in variance and correlations
+among structural variables (or PCA axes), using the covariance of all
+pixels. It is implemented by transforming pixels and existing plots so
+that euclidean distance in the transformed space equals Mahalanobis
+distance in the original space, then running \code{method} as usual. When
+\code{pca = TRUE}, PCA axes are uncorrelated, so this is equivalent to
+dividing each axis by its standard deviation, giving each retained axis
+equal weight. Minor axes, which may mostly contain noise, then have as
+much influence as the first axis, so it is advisable to set \code{n_pca} to
+retain only the most important axes. When \code{distance = "mahalanobis"},
+\code{mean_dist} and \code{max_dist} are Mahalanobis distances, and the
+heterogeneity filter (\code{het_q}) is calculated in the transformed space.
+Values of structural variables or PCA axes are reported in their
+original units.
 }

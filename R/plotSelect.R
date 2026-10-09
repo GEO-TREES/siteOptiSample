@@ -28,12 +28,62 @@
 #'     plots being placed on sharp structural transitions. Represents maximum
 #'     quantile for total focal standard deviation of metrics within candidate
 #'     footprint (e.g., 0.8 excludes top 20% most heterogeneous areas) 
+#' @param min_dist optional, minimum distance between the edges of a new plot
+#'     and any other plot, new or existing, in the units of `r`. Ignored if
+#'     `r` is not spatial
+#' @param r_cost optional, the cost of accessing each location, e.g. travel
+#'     time. If `r` is a `SpatRaster`, a `SpatRaster` with the same geometry
+#'     as `r`. If `r` is a dataframe, a numeric vector with one value per row
+#'     of `r`. Locations with missing costs are excluded. See `cost_tol`
+#' @param cost_tol numeric value between 0 and 1, used if `r_cost` is
+#'     supplied. Each plot is placed at the cheapest candidate location whose
+#'     score is within `cost_tol` of the best candidate's score. 0 ignores
+#'     cost except to break ties, while larger values give more weight to
+#'     cost. See the documentation of each `method` for how the tolerance
+#'     is defined
+#' @param distance distance metric used to compare locations in structural
+#'     space, either "euclidean" (default) or "mahalanobis". See Details
 #' @param method a function to optimally place plots, e.g. `meanminSelect()` or
 #'     `minimaxSelect()`
+#' @param ... additional arguments passed to `method`, e.g. `refine = TRUE`
+#'     for `meanminSelect()`
 #' 
-#' @return sf dataframe with polygons of proposed new plots, or if `r` is a
-#'     dataframe, a vector of row indices in `r` corresponding to the selected
-#'     rows
+#' @details
+#' Diagnostics are returned for each new plot, in the order in which plots
+#'     were selected. Representativeness is measured at the scale of a plot:
+#'     the landscape is represented by the mean structural values within every
+#'     possible plot footprint (see `footprintMetrics()`), and each plot by its
+#'     mean structural values. `mean_dist` and `max_dist` give the mean and
+#'     maximum distance in structural space from every possible plot location
+#'     to its nearest plot, including existing plots and all new plots up to
+#'     and including this one. Plotting `mean_dist` against `plot_order` shows
+#'     how representativeness improves as plots are added, which can help to
+#'     decide how many plots are needed. The values before adding any new
+#'     plots are stored in the `baseline` attribute.
+#'
+#' Mahalanobis distance accounts for differences in variance and correlations
+#'     among structural variables (or PCA axes), using the covariance of all
+#'     pixels. It is implemented by transforming pixels and existing plots so
+#'     that euclidean distance in the transformed space equals Mahalanobis
+#'     distance in the original space, then running `method` as usual. When
+#'     `pca = TRUE`, PCA axes are uncorrelated, so this is equivalent to
+#'     dividing each axis by its standard deviation, giving each retained axis
+#'     equal weight. Minor axes, which may mostly contain noise, then have as
+#'     much influence as the first axis, so it is advisable to set `n_pca` to
+#'     retain only the most important axes. When `distance = "mahalanobis"`,
+#'     `mean_dist` and `max_dist` are Mahalanobis distances, and the
+#'     heterogeneity filter (`het_q`) is calculated in the transformed space.
+#'     Values of structural variables or PCA axes are reported in their
+#'     original units.
+#'
+#' @return if `r` is a `SpatRaster`, an sf dataframe with polygons of proposed
+#'     new plots and columns: `plot_order`: order of selection, one column per
+#'     structural variable or PCA axis giving the mean value within the plot,
+#'     `cost`: mean cost within the plot, if `r_cost` is supplied, and
+#'     `mean_dist` and `max_dist`: see Details. If `r` is a dataframe, a vector
+#'     of row indices in `r` corresponding to the selected rows, with the same
+#'     diagnostics in the `selection` attribute, which also contains a column
+#'     `rows` giving the row indices of each plot.
 #'
 #' @import terra
 #' @import sf
@@ -41,7 +91,11 @@
 #' @export
 #'
 plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL, 
-  pca = TRUE, n_pca = NULL, coord = NULL, het_q = NULL, method = meanminSelect) {
+  pca = TRUE, n_pca = NULL, coord = NULL, het_q = NULL, min_dist = NULL, 
+  r_cost = NULL, cost_tol = 0.1, distance = c("euclidean", "mahalanobis"), 
+  method = meanminSelect, ...) {
+
+  distance <- match.arg(distance)
   
   # Input validation 
   is_rast <- inherits(r, "SpatRaster")
@@ -52,8 +106,20 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     stop("`het_q` must be a single numeric value > 0 and <= 1")
   }
   
+  if (!is.null(min_dist) && !is_spatial) {
+    message("`min_dist` is ignored for non-spatial inputs.")
+    min_dist <- NULL
+  }
+
+  if (is_rast && !is.null(r_cost) && !inherits(r_cost, "SpatRaster")) {
+    stop("`r_cost` must be a SpatRaster when `r` is a SpatRaster")
+  }
+
   # Data coercion 
   if (!is_rast) {
+    if (!is.null(r_cost) && (!is.numeric(r_cost) || length(r_cost) != nrow(r))) {
+      stop("`r_cost` must be a numeric vector with one value per row of `r`")
+    }
     if (!inherits(r, c("data.frame", "matrix"))) {
       stop("`r` must be a 'SpatRaster', 'data.frame', or 'matrix'")
     }
@@ -101,6 +167,23 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
         p <- p_vec
       }
     }
+
+    # Coordinates are assumed to share the coordinate system of spatial `p`
+    if (is_spatial && inherits(p, c("sf", "sfc", "SpatVector")) &&
+        terra::crs(r) == "" && terra::crs(p) != "") {
+      terra::crs(r) <- terra::crs(p)
+    }
+
+    # Convert costs to a raster aligned with `r`
+    if (!is.null(r_cost)) {
+      cost_vals <- rep(NA_real_, terra::ncell(r))
+      if (is_spatial) {
+        cost_vals[terra::cellFromXY(r, as.matrix(r_coords))] <- r_cost
+      } else {
+        cost_vals <- r_cost
+      }
+      r_cost <- terra::setValues(r[[1]], cost_vals)
+    }
   }
   
   # Dimension and mask constraints
@@ -135,11 +218,14 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
   
   if (pca && terra::nlyr(r) > 1) {
     n_pca <- if (is.null(n_pca)) terra::nlyr(r) else n_pca
+    if (n_pca > terra::nlyr(r)) {
+      stop("`n_pca` must not be greater than the number of layers in `r`")
+    }
     old_pca <- PCALandscape(r, old_ext, center = TRUE, scale. = TRUE)
     
     r_pca <- rep(r[[1]], n_pca)
     v_pca <- matrix(NA, nrow = terra::ncell(r_pca), ncol = n_pca)
-    v_pca[complete.cases(terra::values(r)), ] <- old_pca$r_pca$x[, 1:n_pca, drop = FALSE]
+    v_pca[stats::complete.cases(terra::values(r)), ] <- old_pca$r_pca$x[, 1:n_pca, drop = FALSE]
     r_pca <- terra::setValues(r_pca, v_pca)
     names(r_pca) <- colnames(old_pca$r_pca$x[, 1:n_pca, drop = FALSE])
     
@@ -150,22 +236,39 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     }
   } else {
     if (pca) message("Only one variable in `r`. PCA will be skipped.")
-    r_pca <- scale(r)
+
+    # Scale pixels and plots using the same pixel mean and standard deviation
+    v_r <- terra::values(r)
+    r_center <- colMeans(v_r, na.rm = TRUE)
+    r_scale <- apply(v_r, 2, stats::sd, na.rm = TRUE)
+    r_pca <- terra::setValues(r, scale(v_r, center = r_center, scale = r_scale))
+    names(r_pca) <- names(r)
+
     if (!is.null(p)) {
-      if (inherits(old_ext, c("sf", "sfc"))) {
-        p_pca <- sf::st_drop_geometry(old_ext)[, names(r_pca), drop = FALSE] 
-      } else {
-        p_pca <- old_ext[, names(r_pca), drop = FALSE]
-      }
+      p_pca <- scale(as.matrix(old_ext)[, names(r), drop = FALSE], 
+        center = r_center, scale = r_scale)
     } else {
       p_pca <- NULL
+    }
+  }
+  
+  # Values reported in diagnostics, in original units
+  r_report <- r_pca
+
+  # Transform so that euclidean distance equals Mahalanobis distance
+  if (distance == "mahalanobis") {
+    w_mat <- whiteningMatrix(terra::values(r_pca))
+    r_pca <- terra::setValues(r_pca, terra::values(r_pca) %*% w_mat)
+    names(r_pca) <- names(r_report)
+    if (!is.null(p_pca)) {
+      p_pca <- as.matrix(p_pca) %*% w_mat
     }
   }
   
   # Define search space and execute selection algorithm
   if (!is.null(p)) {
     if (inherits(p, c("sf", "sfc", "SpatVector")) || is_spatial) {
-      old_ind <- which(complete.cases(terra::values(terra::mask(r, terra::vect(p)))))
+      old_ind <- which(stats::complete.cases(terra::values(terra::mask(r, terra::vect(p)))))
     } else {
       old_ind <- p 
     } 
@@ -173,12 +276,23 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     old_ind <- NULL
   }
   
-  new_ind <- which(complete.cases(terra::values(r_mask)))
+  new_ind <- which(stats::complete.cases(terra::values(r_mask)))
   
   cand_args <- list(r_pca = r_pca, p_pca = p_pca, 
     old_ind = old_ind, new_ind = new_ind, 
-    n_plots = n_plots, p_new_dim = p_new_dim, het_q = het_q)
-  p_list <- do.call(method, cand_args[intersect(names(cand_args), names(formals(method)))])
+    n_plots = n_plots, p_new_dim = p_new_dim, het_q = het_q, 
+    min_dist = min_dist, r_cost = r_cost, cost_tol = cost_tol)
+  cand_args <- cand_args[intersect(names(cand_args), names(formals(method)))]
+  p_list <- do.call(method, c(cand_args, list(...)))
+
+  # Diagnostics
+  sel_cells <- if (length(p_list) > 0) {
+    lapply(strsplit(names(p_list), ":"), as.integer)
+  } else {
+    list()
+  }
+  diag <- selectionDiagnostics(r_pca, p_pca, sel_cells, p_new_dim, r_cost, 
+    r_report)
   
   # Format output
   if (is_rast) {
@@ -187,18 +301,114 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     } else {
       crs_val <- terra::crs(r)
     }
-    return(sf::st_sf(geometry = do.call(c, p_list), crs = crs_val))
+    if (length(p_list) == 0) {
+      out <- sf::st_sf(diag$selection, geometry = sf::st_sfc(crs = crs_val))
+    } else {
+      out <- sf::st_sf(diag$selection, geometry = do.call(c, p_list), crs = crs_val)
+    }
+    attr(out, "baseline") <- diag$baseline
+    return(out)
   } 
   
   if (is_spatial) {
     r_coords_sf <- sf::st_as_sf(r_coords, coords = coord, crs = terra::crs(r))
-    return(unlist(lapply(p_list, function(poly) {
+    rows <- lapply(p_list, function(poly) {
       if (terra::crs(r) != "") {
         sf::st_crs(poly) <- terra::crs(r)
       }
       sf::st_intersects(poly, r_coords_sf)[[1]]
-    })))
-  } 
-  
-  return(as.numeric(names(p_list)))
+    })
+  } else {
+    # Cell IDs equal row indices for non-spatial input
+    rows <- sel_cells
+  }
+
+  out <- as.integer(unlist(rows))
+  selection <- diag$selection
+  selection$rows <- vapply(rows, paste, character(1), collapse = ":")
+  attr(out, "selection") <- selection
+  attr(out, "baseline") <- diag$baseline
+  return(out)
+}
+
+#' Calculate representativeness diagnostics for selected plots
+#'
+#' @param r_pca `SpatRaster` of PCA scores or scaled structural metrics
+#' @param p_pca optional, structural values of existing plots
+#' @param sel_cells list of cell IDs of each new plot, in order of selection
+#' @param p_new_dim dimensions of new plots
+#' @param r_cost optional, `SpatRaster` of access costs
+#' @param r_report optional, `SpatRaster` of values to report for each plot,
+#'     if different from `r_pca`
+#'
+#' @return list containing: `selection`: dataframe with one row per new plot,
+#'     and `baseline`: mean and maximum distance before adding new plots
+#'
+#' @noRd
+#' 
+selectionDiagnostics <- function(r_pca, p_pca, sel_cells, p_new_dim, r_cost = NULL,
+  r_report = r_pca) {
+  v_pca <- terra::values(r_pca)
+  v_report <- terra::values(r_report)
+  pop <- footprintMetrics(r_pca, p_new_dim)
+
+  plot_vals <- matrix(NA_real_, nrow = length(sel_cells), ncol = ncol(v_pca))
+  report_vals <- matrix(NA_real_, nrow = length(sel_cells), ncol = ncol(v_report),
+    dimnames = list(NULL, names(r_report)))
+  for (i in seq_along(sel_cells)) {
+    plot_vals[i, ] <- colMeans(v_pca[sel_cells[[i]], , drop = FALSE])
+    report_vals[i, ] <- colMeans(v_report[sel_cells[[i]], , drop = FALSE])
+  }
+
+  if (!is.null(p_pca)) {
+    p_pca <- as.matrix(p_pca)
+    p_pca <- p_pca[stats::complete.cases(p_pca), , drop = FALSE]
+  }
+
+  if (!is.null(p_pca) && nrow(p_pca) > 0) {
+    min_d <- nnDist(pop, p_pca)
+    baseline <- c(mean_dist = mean(min_d), max_dist = max(min_d))
+  } else {
+    min_d <- rep(Inf, nrow(pop))
+    baseline <- c(mean_dist = NA_real_, max_dist = NA_real_)
+  }
+
+  mean_dist <- max_dist <- numeric(length(sel_cells))
+  for (i in seq_along(sel_cells)) {
+    min_d <- pmin(min_d, distMat(pop, plot_vals[i, , drop = FALSE])[,1])
+    mean_dist[i] <- mean(min_d)
+    max_dist[i] <- max(min_d)
+  }
+
+  selection <- data.frame(plot_order = seq_along(sel_cells), report_vals)
+  if (!is.null(r_cost)) {
+    v_cost <- terra::values(r_cost)[,1]
+    selection$cost <- vapply(sel_cells, function(ids) mean(v_cost[ids]), numeric(1))
+  }
+  selection$mean_dist <- mean_dist
+  selection$max_dist <- max_dist
+
+  list(selection = selection, baseline = baseline)
+}
+
+#' Calculate a matrix which transforms Mahalanobis distance to euclidean
+#'     distance
+#'
+#' @param x numeric matrix of observations, which may contain missing values
+#'
+#' @return square matrix `W` such that euclidean distances between rows of
+#'     `x %*% W` equal Mahalanobis distances between rows of `x`, using the
+#'     covariance of the complete rows of `x`
+#'
+#' @noRd
+#' 
+whiteningMatrix <- function(x) {
+  x <- x[stats::complete.cases(x), , drop = FALSE]
+  S_inv <- tryCatch(solve(stats::cov(x)), error = function(e) {
+    stop("The covariance matrix of structural variables is singular, so ",
+      "Mahalanobis distance cannot be calculated. Try `pca = TRUE` with fewer ",
+      "axes (`n_pca`).", call. = FALSE)
+  })
+  # S_inv = t(L) %*% L, so euclidean distance after x %*% t(L) is Mahalanobis
+  t(chol(S_inv))
 }
