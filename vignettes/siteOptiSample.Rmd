@@ -598,6 +598,45 @@ curve_df %>%
       colour = NULL)
 ```
 
+## Existing plots without locations
+
+The locations of existing plots are not always known, or plots may lie outside the landscape, e.g. at a nearby site. If the structural metrics of each plot are known, they can be supplied instead of locations with `p_type = "values"`. `p` is then a dataframe with one row per plot and one column per structural variable, with column names matching the layers of `r`. These values should be comparable to the mean of `r` within a plot footprint, i.e. derived from the same data source and averaged over a plot-sized area. 
+
+Here, the metrics extracted earlier (`old_ext`) are used as an example. Because the plots are represented in exactly the same way, representativeness before adding new plots (the `baseline` attribute) is the same as when using plot polygons.
+
+```{r}
+test_vals <- plotSelect(
+  r = r,
+  p = as.data.frame(old_ext),
+  p_type = "values",
+  n_plots = 10,
+  p_new_dim = c(100, 100),
+  pca = TRUE,
+  n_pca = 3,
+  method = meanminSelect
+)
+
+rbind(
+  "Plot polygons" = attr(test1, "baseline"),
+  "Plot values" = attr(test_vals, "baseline")) %>% 
+  knitr::kable(digits = 3, col.names = c("Mean distance", "Maximum distance"))
+```
+
+The only difference is that without locations, new plots are not prevented from overlapping existing plots, and `min_dist` only applies among new plots. Here, `meanminSelect()` places new plots in parts of structural space far from existing plots, so new plots rarely fall on top of existing plots. In this case, the two sets of new plots are identical.
+
+```{r}
+ggplot() +
+  geom_spatraster(data = r[[1]]) + 
+  scale_fill_scico(name = names(r)[1], palette = "bamako", na.value = NA) +
+  geom_sf(data = p, fill = NA, colour = "red") + 
+  geom_sf(data = test1, fill = NA, colour = "black", linewidth = 0.8) + 
+  geom_sf(data = test_vals, fill = NA, colour = "blue", linetype = "dashed",
+    linewidth = 0.8) + 
+  theme_bw() +
+  theme(axis.text = element_blank()) + 
+  labs(caption = "Red: existing plots. Black: new plots using plot polygons.\nBlue dashed: new plots using plot values.")
+```
+
 ## Field constraints
 
 Two arguments in `plotSelect()` help to make plot locations practical in the field. `min_dist` sets the minimum distance between the edges of a new plot and any other plot, new or existing, e.g. to keep plots spatially independent. `r_cost` provides a raster describing the cost of accessing each location, e.g. travel time. When `r_cost` is supplied, each plot is placed at the cheapest location whose score is within a tolerance (`cost_tol`) of the best possible location. Larger values of `cost_tol` give more weight to cost, at the expense of representativeness.
