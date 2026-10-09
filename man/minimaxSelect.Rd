@@ -30,7 +30,7 @@ If not supplied, the full set of valid pixels in \code{r_pca} is used.}
 
 \item{n_plots}{maximum number of new plots to add.}
 
-\item{p_new_dim}{dimensions of new plots in the same coordinate system as \code{r}.
+\item{p_new_dim}{dimensions of new plots in the same coordinate system as \code{r_pca}.
 A vector of two values. Should be perfectly divisible by the resolution
 of \code{r_pca}.}
 
@@ -51,8 +51,9 @@ locations where any pixel has a missing cost are excluded. See
 
 \item{cost_tol}{numeric value between 0 and 1, used if \code{r_cost} is
 supplied. Each plot is placed at the cheapest candidate location whose
-distance to its nearest plot is at least \code{1 - cost_tol} times the
-largest distance among candidates.}
+score is within a tolerance of the best candidate's score. Larger
+values give more weight to cost. See Details for how the tolerance is
+defined.}
 }
 \value{
 list of \code{sf} polygons for proposed new plots.
@@ -71,4 +72,8 @@ nearest plot, then chooses the candidate with the highest distance
 value. If there are no existing plots, the first plot is placed at the
 candidate most dissimilar to the landscape mean. As a result, plots
 occupy structural extremes.
+
+If \code{r_cost} is supplied, candidates are accepted if their distance to
+their nearest plot is at least \code{1 - cost_tol} times the largest
+distance among candidates.
 }

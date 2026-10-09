@@ -30,7 +30,7 @@ If not supplied, the full set of valid pixels in \code{r_pca} is used.}
 
 \item{n_plots}{maximum number of new plots to add.}
 
-\item{p_new_dim}{dimensions of new plots in the same coordinate system as \code{r}.
+\item{p_new_dim}{dimensions of new plots in the same coordinate system as \code{r_pca}.
 A vector of two values. Should be perfectly divisible by the resolution
 of \code{r_pca}.}
 
@@ -51,9 +51,9 @@ locations where any pixel has a missing cost are excluded. See
 
 \item{cost_tol}{numeric value between 0 and 1, used if \code{r_cost} is
 supplied. Each plot is placed at the cheapest candidate location whose
-distance to the cluster centroid is no more than the distance of the
-closest candidate plus \code{cost_tol} times the mean distance between the
-centroid and the members of its cluster.}
+score is within a tolerance of the best candidate's score. Larger
+values give more weight to cost. See Details for how the tolerance is
+defined.}
 }
 \value{
 list of \code{sf} polygons for proposed new plots.
@@ -76,4 +76,9 @@ the cluster's centroid. As a result, rather than pushing plots toward
 structural extremes, the proposed plots are distributed
 representatively across the dominant structural conditions of the
 landscape.
+
+If \code{r_cost} is supplied, candidates are accepted if their distance to the
+cluster centroid is no more than the distance of the closest candidate
+plus \code{cost_tol} times the mean distance between the centroid and the
+members of its cluster.
 }

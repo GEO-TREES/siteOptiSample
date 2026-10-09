@@ -7,7 +7,7 @@
 #' @param new_ind optional, pixel IDs in `r_pca` specifying candidate plot locations. 
 #'     If not supplied, the full set of valid pixels in `r_pca` is used.
 #' @param n_plots maximum number of new plots to add.
-#' @param p_new_dim dimensions of new plots in the same coordinate system as `r`. 
+#' @param p_new_dim dimensions of new plots in the same coordinate system as `r_pca`. 
 #'      A vector of two values. Should be perfectly divisible by the resolution 
 #'      of `r_pca`. 
 #' @param het_q optional, numeric value between 0 and 1. Defines a threshold 
@@ -24,10 +24,9 @@
 #'     `cost_tol`.
 #' @param cost_tol numeric value between 0 and 1, used if `r_cost` is
 #'     supplied. Each plot is placed at the cheapest candidate location whose
-#'     score is within `cost_tol` of the best candidate's score. For
-#'     `meanminSelect()`, this is the reduction in mean distance, e.g. 0.1
-#'     accepts candidates that achieve at least 90% of the best possible
-#'     reduction. 
+#'     score is within a tolerance of the best candidate's score. Larger
+#'     values give more weight to cost. See Details for how the tolerance is
+#'     defined.
 #' @param refine logical, if TRUE, the greedy selection is followed by a
 #'     refinement step which swaps selected plots for other candidate
 #'     locations while doing so reduces the mean distance. See Details.
@@ -58,6 +57,11 @@
 #'      the order they were originally placed by greedy selection. If `r_cost`
 #'      is supplied, a plot is only swapped to a location with an equal or
 #'      lower cost.
+#'
+#' If `r_cost` is supplied, a candidate's score is the reduction in mean
+#'      distance it would give, and candidates are accepted if they achieve at
+#'      least `1 - cost_tol` times the best possible reduction, e.g. 0.1
+#'      accepts candidates that achieve at least 90% of the best reduction.
 #'
 #' @return list of `sf` polygons for proposed new plots. 
 #' 

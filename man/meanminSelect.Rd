@@ -31,7 +31,7 @@ If not supplied, the full set of valid pixels in \code{r_pca} is used.}
 
 \item{n_plots}{maximum number of new plots to add.}
 
-\item{p_new_dim}{dimensions of new plots in the same coordinate system as \code{r}.
+\item{p_new_dim}{dimensions of new plots in the same coordinate system as \code{r_pca}.
 A vector of two values. Should be perfectly divisible by the resolution
 of \code{r_pca}.}
 
@@ -52,10 +52,9 @@ locations where any pixel has a missing cost are excluded. See
 
 \item{cost_tol}{numeric value between 0 and 1, used if \code{r_cost} is
 supplied. Each plot is placed at the cheapest candidate location whose
-score is within \code{cost_tol} of the best candidate's score. For
-\code{meanminSelect()}, this is the reduction in mean distance, e.g. 0.1
-accepts candidates that achieve at least 90\% of the best possible
-reduction.}
+score is within a tolerance of the best candidate's score. Larger
+values give more weight to cost. See Details for how the tolerance is
+defined.}
 
 \item{refine}{logical, if TRUE, the greedy selection is followed by a
 refinement step which swaps selected plots for other candidate
@@ -93,4 +92,9 @@ selection, but takes longer to compute. Refined plots are returned in
 the order they were originally placed by greedy selection. If \code{r_cost}
 is supplied, a plot is only swapped to a location with an equal or
 lower cost.
+
+If \code{r_cost} is supplied, a candidate's score is the reduction in mean
+distance it would give, and candidates are accepted if they achieve at
+least \code{1 - cost_tol} times the best possible reduction, e.g. 0.1
+accepts candidates that achieve at least 90\% of the best reduction.
 }

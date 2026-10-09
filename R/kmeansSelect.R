@@ -1,11 +1,6 @@
 #' Select candidate plots using K-Means clustering 
 #' 
 #' @inheritParams meanminSelect
-#' @param cost_tol numeric value between 0 and 1, used if `r_cost` is
-#'     supplied. Each plot is placed at the cheapest candidate location whose
-#'     distance to the cluster centroid is no more than the distance of the
-#'     closest candidate plus `cost_tol` times the mean distance between the
-#'     centroid and the members of its cluster.
 #' 
 #' @details 
 #' The K-means algorithm aims to capture the full structural diversity of the
@@ -22,6 +17,11 @@
 #'      structural extremes, the proposed plots are distributed
 #'      representatively across the dominant structural conditions of the
 #'      landscape.
+#'
+#' If `r_cost` is supplied, candidates are accepted if their distance to the
+#'      cluster centroid is no more than the distance of the closest candidate
+#'      plus `cost_tol` times the mean distance between the centroid and the
+#'      members of its cluster.
 #' 
 #' @return list of `sf` polygons for proposed new plots. 
 #' 

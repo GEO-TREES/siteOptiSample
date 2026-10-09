@@ -1,10 +1,6 @@
 #' Iteratively add candidate plots using the minimax algorithm
 #' 
 #' @inheritParams meanminSelect
-#' @param cost_tol numeric value between 0 and 1, used if `r_cost` is
-#'     supplied. Each plot is placed at the cheapest candidate location whose
-#'     distance to its nearest plot is at least `1 - cost_tol` times the
-#'     largest distance among candidates.
 #'
 #' @details 
 #' The minimax algorithm aims to minimise the maximum distance between
@@ -17,6 +13,10 @@
 #'     value. If there are no existing plots, the first plot is placed at the
 #'     candidate most dissimilar to the landscape mean. As a result, plots
 #'     occupy structural extremes.
+#'
+#' If `r_cost` is supplied, candidates are accepted if their distance to
+#'     their nearest plot is at least `1 - cost_tol` times the largest
+#'     distance among candidates.
 #'
 #' @return list of `sf` polygons for proposed new plots. 
 #' 
