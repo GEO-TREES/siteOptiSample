@@ -1,6 +1,6 @@
 #' Get nearest neighbour distances between two PCAs
-#' 
-#' @param x PCA scores 
+#'
+#' @param x PCA scores
 #' @param y PCA scores
 #' @param w optional, numeric vector of weights (one per column). Larger values
 #'     increase a variable’s contribution; if NULL, all variables are equally
@@ -10,20 +10,24 @@
 #' @param method distance method, either "euclidean" or "mahalanobis"
 #'
 #' @return if `k = 1` a vector of distances to the nearest neighbour in `y` for
-#'     each row in `x`. If `k = 2` a matrix with k columns with ordered nearest
+#'     each row in `x`. If `k > 1` a matrix with k columns with ordered nearest
 #'     neighbour distances
 #'
 #' @export
-#' 
+#'
 pcaDist <- function(x, y, w = NULL, n_pca = 3, k = 1, method = "euclidean") {
 
   # Check input
-  if (n_pca > ncol(x)) { 
-    stop("n_pca must be less than the number of principal components in x")
+  if (n_pca > ncol(x)) {
+    stop("n_pca must not be greater than the number of principal components in x")
   }
 
-  if (ncol(x) != ncol(y)) { 
+  if (ncol(x) != ncol(y)) {
     stop("The number of principal components in x must be equal to the number in y")
+  }
+
+  if (k > nrow(y)) {
+    stop("k must not be greater than the number of rows in y")
   }
 
   # Calculate nearest neighbor distances
@@ -36,16 +40,14 @@ pcaDist <- function(x, y, w = NULL, n_pca = 3, k = 1, method = "euclidean") {
     stop("method must be either 'euclidean' or 'mahalanobis'")
   }
 
-  min_dists <- apply(dists_mat, 1, function(i) {
-    sort(i)[1:k]
-  }, simplify = FALSE)
-  out <- do.call(rbind, min_dists)
-
-  if (ncol(out) == 1) {
-    out <- c(out)
+  if (k == 1) {
+    out <- apply(dists_mat, 1, min)
+  } else {
+    out <- t(apply(dists_mat, 1, function(i) {
+      sort(i)[seq_len(k)]
+    }))
   }
 
   # Return
   return(out)
 }
-

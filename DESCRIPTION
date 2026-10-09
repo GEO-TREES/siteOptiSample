@@ -1,16 +1,38 @@
 Package: siteOptiSample
-Title: What the Package Does (One Line, Title Case)
+Title: Optimal Placement of Forest Plots in Structural Space
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+    person("John L.", "Godlee", , "johngodlee@gmail.com", role = c("aut", "cre"))
+Description: Tools to assess how well existing forest plots represent the
+    structural variation of a landscape, and to select locations for new plots
+    that fill gaps in multidimensional structural space. Works with raster
+    datasets (e.g. airborne LiDAR metrics) or tabular data, and provides
+    several plot selection algorithms (meanmin, minimax, K-means, and Latin
+    hypercube).
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
+Imports:
+    mclust,
+    proxy,
+    sf,
+    stats,
+    terra
 Suggests: 
+    cluster,
+    dplyr,
+    GGally,
+    ggplot2,
     knitr,
-    rmarkdown
+    patchwork,
+    rmarkdown,
+    scico,
+    stringr,
+    tibble,
+    tidyr,
+    tidyterra,
+    vegan
 VignetteBuilder: knitr
 Depends: 
     R (>= 3.5)

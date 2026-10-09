@@ -22,7 +22,20 @@ returned by \code{PCALandscape()$p_pca}}
 \item{ci}{quantile threshold for distances, e.g. 0.95 = 95th percentile of
 distances among plots}
 }
+\value{
+dataframe with one row per pixel, containing \code{dist}: euclidean
+distance from the centroid of existing plots, and \code{group}: the
+classification of each pixel
+}
 \description{
 Classify pixels by whether they are well-represented by existing (and
 proposed) plots
+}
+\details{
+Representativeness is measured relative to the centroid of the plots in
+PCA space. The cutoff is the \code{ci} quantile of the distances of the plots
+from their own centroid. Pixels further than this cutoff from the
+centroid are classified as poorly represented. If \code{p_new} is supplied,
+the centroid and cutoff are recalculated using both existing and
+proposed plots.
 }

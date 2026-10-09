@@ -9,8 +9,8 @@ extractPlotMetrics(r, p, fun = mean, ...)
 \arguments{
 \item{r}{SpatRaster object}
 
-\item{p}{either an sf object containing plot polygons or points, or a
-dataframe with two columns \code{x} and \code{y} describing coordinates in the same
+\item{p}{either an sf or \code{SpatVector} object containing plot polygons or
+points, or a dataframe with two columns \code{x} and \code{y} describing coordinates in the same
 coordinate system as \code{r}}
 
 \item{fun}{function to summarize the extracted data by polygon geometry, see

@@ -23,7 +23,7 @@ weighted.}
 }
 \value{
 if \code{k = 1} a vector of distances to the nearest neighbour in \code{y} for
-each row in \code{x}. If \code{k = 2} a matrix with k columns with ordered nearest
+each row in \code{x}. If \code{k > 1} a matrix with k columns with ordered nearest
 neighbour distances
 }
 \description{

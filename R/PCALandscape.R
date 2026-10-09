@@ -24,7 +24,7 @@ PCALandscape <- function(r, p = NULL, ...) {
   metric_cols <- names(r_df)
   
   # PCA to reduce dimensionality
-  r_pca <- prcomp(r_df[,metric_cols], ...)
+  r_pca <- stats::prcomp(r_df[,metric_cols], ...)
   
   # Project plots into PCA space
   if (!is.null(p)) { 
