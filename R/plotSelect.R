@@ -1,11 +1,20 @@
 #' Recommend locations for plots
 #' 
 #' @param r `SpatRaster` or dataframe with structural metrics
-#' @param p optional, either an `sf` object containing polygons or points of 
-#'     existing plots, a dataframe with two columns `x` and `y` describing 
-#'     coordinates in the same coordinate system as `r`, or if `r` is not 
-#'     spatial a vector of row indices in `r` specifying locations with 
-#'     existing plots
+#' @param p optional, existing plots, in the format given by `p_type`
+#' @param p_type type of `p`, one of:
+#'     * "polygon" (default): an `sf` or `SpatVector` object containing 
+#'       polygons of existing plots
+#'     * "point": an `sf` or `SpatVector` object containing points of 
+#'       existing plots
+#'     * "xy": a dataframe or matrix with columns `x` and `y` giving the 
+#'       coordinates of existing plots in the same coordinate system as `r`. 
+#'       Requires `r` to be spatial
+#'     * "values": a dataframe or matrix with one row per existing plot and 
+#'       one column per structural variable, with column names matching the 
+#'       variables in `r`. Other columns are ignored. See Details
+#'     * "rows": a vector of row indices in `r` giving locations of existing 
+#'       plots. Requires `r` to be a dataframe
 #' @param n_plots maximum number of new plots to add
 #' @param p_new_dim optional, dimensions of new plots in the same coordinate 
 #'     system as `r`. Either a single value for square plots, or a vector of
@@ -76,6 +85,14 @@
 #'     Values of structural variables or PCA axes are reported in their
 #'     original units.
 #'
+#' Existing plots can be supplied as structural values rather than locations
+#'     (`p_type = "values"`), e.g. for plots outside the extent of `r`. Values
+#'     should be comparable to the mean of `r` within a plot footprint, i.e.
+#'     derived from the same data source, in the same units, and averaged over
+#'     a plot-sized area. As the locations of these plots are unknown, new
+#'     plots are not prevented from overlapping them, and `min_dist` only
+#'     applies among new plots.
+#'
 #' @return if `r` is a `SpatRaster`, an sf dataframe with polygons of proposed
 #'     new plots and columns: `plot_order`: order of selection, one column per
 #'     structural variable or PCA axis giving the mean value within the plot,
@@ -90,12 +107,14 @@
 #' 
 #' @export
 #'
-plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL, 
-  pca = TRUE, n_pca = NULL, coord = NULL, het_q = NULL, min_dist = NULL, 
+plotSelect <- function(r, p = NULL, n_plots, 
+  p_type = c("polygon", "point", "xy", "values", "rows"),
+  p_new_dim = NULL, r_mask = NULL, pca = TRUE, n_pca = NULL, coord = NULL, het_q = NULL, min_dist = NULL, 
   r_cost = NULL, cost_tol = 0.1, distance = c("euclidean", "mahalanobis"), 
   method = meanminSelect, ...) {
 
   distance <- match.arg(distance)
+  p_type <- match.arg(p_type)
   
   # Input validation 
   is_rast <- inherits(r, "SpatRaster")
@@ -154,20 +173,6 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
       r <- r_rast
     }
     
-    if (!is.null(p) && !inherits(p, c("sf", "sfc", "SpatVector"))) {
-      p_vec <- suppressWarnings(as.numeric(unlist(p)))
-      max_idx <- if (is_spatial) nrow(r_coords) else terra::ncell(r)
-      
-      if (any(is.na(p_vec) | p_vec < 1 | p_vec > max_idx | p_vec != floor(p_vec))) {
-        stop("`p` must be valid row indices in `r` when input is not a SpatRaster and `p` is not a spatial object.")
-      }
-      if (is_spatial) {
-        p <- sf::st_as_sf(r_coords[p_vec, , drop = FALSE], coords = coord) 
-      } else { 
-        p <- p_vec
-      }
-    }
-
     # Coordinates are assumed to share the coordinate system of spatial `p`
     if (is_spatial && inherits(p, c("sf", "sfc", "SpatVector")) &&
         terra::crs(r) == "" && terra::crs(p) != "") {
@@ -183,6 +188,65 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
         cost_vals <- r_cost
       }
       r_cost <- terra::setValues(r[[1]], cost_vals)
+    }
+  }
+
+  # Existing plots
+  p_vals <- NULL
+  if (!is.null(p)) {
+    crs_r <- if (terra::crs(r) == "") NA else terra::crs(r)
+    if (p_type %in% c("polygon", "point")) {
+      sf_types <- if (p_type == "polygon") {
+        c("POLYGON", "MULTIPOLYGON") 
+      } else {
+        c("POINT", "MULTIPOINT")
+      }
+      vect_type <- if (p_type == "polygon") "polygons" else "points"
+      if (!is_spatial) {
+        stop("`p_type = \"", p_type, "\"` requires `r` to be spatial")
+      }
+      if (!(isSFType(p, sf_types) || 
+          (inherits(p, "SpatVector") && terra::geomtype(p) == vect_type))) {
+        stop("`p` must be an sf or SpatVector object containing ", vect_type, 
+          " when `p_type = \"", p_type, "\"`")
+      }
+    } else if (p_type == "xy") {
+      if (!is_spatial) {
+        stop("`p_type = \"xy\"` requires `r` to be spatial")
+      }
+      if (!inherits(p, c("data.frame", "matrix")) || 
+          !all(c("x", "y") %in% colnames(p))) {
+        stop("`p` must be a dataframe or matrix with columns `x` and `y` ",
+          "when `p_type = \"xy\"`")
+      }
+      if (inherits(p, "sf")) {
+        p <- sf::st_drop_geometry(p)
+      }
+      p <- sf::st_as_sf(as.data.frame(p)[, c("x", "y")], coords = c("x", "y"), 
+        crs = crs_r)
+    } else if (p_type == "values") {
+      # Structural values are used directly, with no locations
+      if (!inherits(p, c("data.frame", "matrix"))) {
+        stop("`p` must be a dataframe or matrix when `p_type = \"values\"`")
+      }
+      if (inherits(p, "sf")) {
+        p <- sf::st_drop_geometry(p)
+      }
+      p_vals <- as.data.frame(p)
+      p <- NULL
+    } else if (p_type == "rows") {
+      if (is_rast) {
+        stop("`p_type = \"rows\"` requires `r` to be a dataframe")
+      }
+      max_idx <- if (is_spatial) nrow(r_coords) else terra::ncell(r)
+      if (!is.numeric(p) || 
+          any(is.na(p) | p < 1 | p > max_idx | p != floor(p))) {
+        stop("`p` must be valid row indices in `r` when `p_type = \"rows\"`")
+      }
+      if (is_spatial) {
+        p <- sf::st_as_sf(r_coords[p, , drop = FALSE], coords = coord, 
+          crs = crs_r) 
+      }
     }
   }
   
@@ -206,7 +270,14 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
   r_mask <- if (!is.null(r_mask)) terra::mask(r, r_mask) else r
   
   # Feature extraction and PCA
-  if (!is.null(p)) {
+  if (!is.null(p_vals)) {
+    missing_vars <- setdiff(names(r), colnames(p_vals))
+    if (length(missing_vars) > 0) {
+      stop("`p` is missing structural variables found in `r`: ",
+        paste(missing_vars, collapse = ", "))
+    }
+    old_ext <- p_vals[, names(r), drop = FALSE]
+  } else if (!is.null(p)) {
     if (is_spatial) {
       old_ext <- extractPlotMetrics(r, p) 
     } else { 
@@ -229,7 +300,7 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     r_pca <- terra::setValues(r_pca, v_pca)
     names(r_pca) <- colnames(old_pca$r_pca$x[, 1:n_pca, drop = FALSE])
     
-    if (!is.null(p)) {
+    if (!is.null(old_ext)) {
       p_pca <- old_pca$p_pca[, 1:n_pca, drop = FALSE] 
     } else {
       p_pca <- NULL
@@ -244,7 +315,7 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
     r_pca <- terra::setValues(r, scale(v_r, center = r_center, scale = r_scale))
     names(r_pca) <- names(r)
 
-    if (!is.null(p)) {
+    if (!is.null(old_ext)) {
       p_pca <- scale(as.matrix(old_ext)[, names(r), drop = FALSE], 
         center = r_center, scale = r_scale)
     } else {
@@ -268,7 +339,8 @@ plotSelect <- function(r, p = NULL, n_plots, p_new_dim = NULL, r_mask = NULL,
   # Define search space and execute selection algorithm
   if (!is.null(p)) {
     if (inherits(p, c("sf", "sfc", "SpatVector")) || is_spatial) {
-      old_ind <- which(stats::complete.cases(terra::values(terra::mask(r, terra::vect(p)))))
+      p_vect <- if (inherits(p, "SpatVector")) p else terra::vect(p)
+      old_ind <- which(stats::complete.cases(terra::values(terra::mask(r, p_vect))))
     } else {
       old_ind <- p 
     } 

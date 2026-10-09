@@ -102,7 +102,7 @@ test_that("raster and data frame inputs select the same locations", {
 test_that("non-spatial input returns row indices matching brute-force greedy", {
   set.seed(60)
   df <- data.frame(a = rnorm(30), b = rnorm(30), c = rnorm(30))
-  out <- suppressMessages(plotSelect(df, p = c(3, 7), n_plots = 3, pca = FALSE))
+  out <- suppressMessages(plotSelect(df, p = c(3, 7), p_type = "rows", n_plots = 3, pca = FALSE))
   X <- scale(df)
   cur <- siteOptiSample:::nnDist(X, X[c(3, 7), ])
   used <- c(3, 7)
@@ -180,4 +180,102 @@ test_that("invalid distance arguments are rejected", {
   names(r_dup) <- c("a", "b")
   expect_error(suppressMessages(plotSelect(r_dup, n_plots = 1, pca = FALSE, 
     distance = "mahalanobis")), "singular")
+})
+
+test_that("existing plots can be supplied as structural values", {
+  old_ext <- as.data.frame(extractPlotMetrics(r, p))
+  spy_capture <- function(...) {
+    captured <- NULL
+    spy <- function(r_pca, p_pca, old_ind, n_plots, p_new_dim) {
+      captured <<- list(p_pca = p_pca, old_ind = old_ind)
+      list()
+    }
+    plotSelect(r, n_plots = 1, p_new_dim = c(100, 100), n_pca = 3, 
+      method = spy, ...)
+    captured
+  }
+  loc <- spy_capture(p = p)
+  val <- spy_capture(p = old_ext[, rev(names(r))], p_type = "values")
+  expect_equal(val$p_pca, loc$p_pca)
+  expect_null(val$old_ind)
+  
+  # Non-spatial input, with an extra column which is ignored
+  set.seed(61)
+  df <- data.frame(a = rnorm(30), b = rnorm(30), c = rnorm(30))
+  out_ind <- suppressMessages(plotSelect(df, p = c(3, 7), p_type = "rows",
+    n_plots = 3, pca = FALSE))
+  out_val <- suppressMessages(plotSelect(df, p = cbind(df[c(3, 7), ], id = 1:2),
+    p_type = "values", n_plots = 3, pca = FALSE))
+  expect_equal(as.vector(out_val), as.vector(out_ind))
+})
+
+test_that("p_type = 'values' rejects invalid values", {
+  df <- data.frame(a = rnorm(10), b = rnorm(10))
+  expect_error(plotSelect(df, p = data.frame(a = 1), p_type = "values", 
+    n_plots = 1, pca = FALSE), "missing structural variables found in `r`: b")
+  expect_error(plotSelect(df, p = c(1, 2), p_type = "values", n_plots = 1,
+    pca = FALSE), "must be a dataframe or matrix")
+})
+
+test_that("point and xy existing plots give the same result", {
+  pts <- suppressWarnings(sf::st_centroid(sf::st_geometry(p)))
+  xy <- as.data.frame(sf::st_coordinates(pts))
+  names(xy) <- c("x", "y")
+  out_pt <- suppressMessages(plotSelect(r, pts, p_type = "point", n_plots = 3,
+    p_new_dim = c(100, 100), n_pca = 3))
+  out_xy <- suppressMessages(plotSelect(r, xy, p_type = "xy", n_plots = 3,
+    p_new_dim = c(100, 100), n_pca = 3))
+  expect_equal(sf::st_drop_geometry(out_xy), sf::st_drop_geometry(out_pt))
+  expect_equal(attr(out_xy, "baseline"), attr(out_pt, "baseline"))
+
+  # Coordinates of dataframe input
+  r_df <- terra::values(r)
+  valid_rows <- stats::complete.cases(r_df)
+  r_df_all <- cbind(r_df[valid_rows, ], terra::crds(r))
+  out_df <- suppressMessages(plotSelect(r_df_all, xy, p_type = "xy", 
+    n_plots = 3, p_new_dim = c(100, 100), n_pca = 3, coord = c("x", "y")))
+  expect_equal(attr(out_df, "baseline"), attr(out_pt, "baseline"))
+})
+
+test_that("p must match p_type", {
+  df <- data.frame(a = rnorm(10), b = rnorm(10))
+  pts <- suppressWarnings(sf::st_centroid(p))
+  expect_error(plotSelect(r, pts, n_plots = 1), "containing polygons")
+  expect_error(plotSelect(r, p, p_type = "point", n_plots = 1), 
+    "containing points")
+  expect_error(plotSelect(r, data.frame(a = 1), p_type = "xy", n_plots = 1), 
+    "columns `x` and `y`")
+  expect_error(plotSelect(r, c(1, 2), p_type = "rows", n_plots = 1), 
+    "requires `r` to be a dataframe")
+  expect_error(plotSelect(df, p, n_plots = 1, pca = FALSE), 
+    "requires `r` to be spatial")
+  expect_error(plotSelect(df, c(1, 11), p_type = "rows", n_plots = 1, 
+    pca = FALSE), "valid row indices")
+})
+
+test_that("SpatVector existing plots match sf", {
+  pts <- suppressWarnings(sf::st_centroid(p))
+  for (args in list(list(p, "polygon"), list(pts, "point"))) {
+    out_sf <- suppressMessages(plotSelect(r, args[[1]], p_type = args[[2]], 
+      n_plots = 3, p_new_dim = c(100, 100), n_pca = 3))
+    out_v <- suppressMessages(plotSelect(r, terra::vect(args[[1]]), 
+      p_type = args[[2]], n_plots = 3, p_new_dim = c(100, 100), n_pca = 3))
+    expect_equal(sf::st_drop_geometry(out_v), sf::st_drop_geometry(out_sf))
+  }
+})
+
+test_that("existing plots with missing values give a warning", {
+  vals <- as.data.frame(extractPlotMetrics(r, p))
+  expect_warning(suppressMessages(plotSelect(r, rbind(vals, NA), 
+    p_type = "values", n_plots = 1, p_new_dim = c(100, 100), n_pca = 3)),
+    "1 existing plot\\(s\\) have missing")
+  xy <- data.frame(x = 0, y = 0)
+  expect_warning(suppressMessages(plotSelect(r, xy, p_type = "xy", 
+    n_plots = 1, p_new_dim = c(100, 100), n_pca = 3)), "missing structural values")
+})
+
+test_that("a single existing plot location is accepted", {
+  out <- suppressMessages(plotSelect(r, p[1, ], n_plots = 1, 
+    p_new_dim = c(100, 100), n_pca = 3))
+  expect_false(is.na(attr(out, "baseline")[["mean_dist"]]))
 })

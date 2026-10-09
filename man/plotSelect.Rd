@@ -8,6 +8,7 @@ plotSelect(
   r,
   p = NULL,
   n_plots,
+  p_type = c("polygon", "point", "xy", "values", "rows"),
   p_new_dim = NULL,
   r_mask = NULL,
   pca = TRUE,
@@ -25,13 +26,23 @@ plotSelect(
 \arguments{
 \item{r}{\code{SpatRaster} or dataframe with structural metrics}
 
-\item{p}{optional, either an \code{sf} object containing polygons or points of
-existing plots, a dataframe with two columns \code{x} and \code{y} describing
-coordinates in the same coordinate system as \code{r}, or if \code{r} is not
-spatial a vector of row indices in \code{r} specifying locations with
-existing plots}
+\item{p}{optional, existing plots, in the format given by \code{p_type}}
 
 \item{n_plots}{maximum number of new plots to add}
+
+\item{p_type}{type of \code{p}, one of:
+* "polygon" (default): an \code{sf} or \code{SpatVector} object containing
+polygons of existing plots
+* "point": an \code{sf} or \code{SpatVector} object containing points of
+existing plots
+* "xy": a dataframe or matrix with columns \code{x} and \code{y} giving the
+coordinates of existing plots in the same coordinate system as \code{r}.
+Requires \code{r} to be spatial
+* "values": a dataframe or matrix with one row per existing plot and
+one column per structural variable, with column names matching the
+variables in \code{r}. Other columns are ignored. See Details
+* "rows": a vector of row indices in \code{r} giving locations of existing
+plots. Requires \code{r} to be a dataframe}
 
 \item{p_new_dim}{optional, dimensions of new plots in the same coordinate
 system as \code{r}. Either a single value for square plots, or a vector of
@@ -125,4 +136,12 @@ retain only the most important axes. When \code{distance = "mahalanobis"},
 heterogeneity filter (\code{het_q}) is calculated in the transformed space.
 Values of structural variables or PCA axes are reported in their
 original units.
+
+Existing plots can be supplied as structural values rather than locations
+(\code{p_type = "values"}), e.g. for plots outside the extent of \code{r}. Values
+should be comparable to the mean of \code{r} within a plot footprint, i.e.
+derived from the same data source, in the same units, and averaged over
+a plot-sized area. As the locations of these plots are unknown, new
+plots are not prevented from overlapping them, and \code{min_dist} only
+applies among new plots.
 }

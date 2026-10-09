@@ -28,7 +28,7 @@ PCALandscape <- function(r, p = NULL, ...) {
   
   # Project plots into PCA space
   if (!is.null(p)) { 
-    p_pca <- scale(p[,metric_cols], 
+    p_pca <- scale(p[, metric_cols, drop = FALSE], 
       center = r_pca$center, scale = r_pca$scale) %*% r_pca$rotation
   } else {
     p_pca <- NULL
